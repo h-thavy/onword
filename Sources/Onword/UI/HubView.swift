@@ -69,6 +69,7 @@ struct HubView: View {
                 }
             }
         }
+        .ignoresSafeArea()   // the strip shares the 52 pt title-bar row with the traffic lights
         .background(Theme.frame)
         .font(Theme.sans(15))
         .foregroundStyle(Theme.ink)
@@ -107,7 +108,7 @@ private struct TitleStrip: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.buttonFill : .clear))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plainPointer)
             .help(collapsed ? "Show sidebar" : "Hide sidebar")
             .disabled(!canCollapse && !collapsed)
             .opacity(canCollapse || collapsed ? 1 : 0.4)
@@ -195,7 +196,7 @@ private struct NavItem: View {
                 .fill(selected || hovering ? Theme.buttonFill : .clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
     }

@@ -126,7 +126,7 @@ struct LanguagePicker: View {
                                                 .foregroundStyle(Theme.inkTertiary).frame(width: 24, height: 24)
                                                 .contentShape(Rectangle())
                                         }
-                                        .buttonStyle(.plain).help("Remove")
+                                        .buttonStyle(.plainPointer).help("Remove")
                                     }
                                     .padding(.leading, 4)
                                 }
@@ -171,7 +171,7 @@ struct LanguagePicker: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Theme.tileRing : .clear, lineWidth: 2))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .disabled(autoDetect)
         .opacity(autoDetect ? 0.5 : 1)
     }
@@ -218,7 +218,7 @@ struct PendingModelBanner: View {
                     .monospacedDigit()
                 Spacer()
             }
-            Button("Cancel") { dictation.cancelPendingModel() }.buttonStyle(.plain).foregroundStyle(Theme.inkTertiary)
+            Button("Cancel") { dictation.cancelPendingModel() }.buttonStyle(.plainPointer).foregroundStyle(Theme.inkTertiary)
         }
         .font(Theme.sans(13, .medium))
         .padding(12)

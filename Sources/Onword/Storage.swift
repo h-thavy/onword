@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OnwordCore
 
@@ -114,5 +115,23 @@ enum History {
         } else {
             try? line.write(to: AppPaths.history, options: .atomic)
         }
+    }
+}
+
+/// The user's name, asked for during setup and shown in greetings and meeting notes.
+enum UserProfile {
+    static let key = "userName"
+
+    static var name: String? {
+        get {
+            let value = UserDefaults.standard.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
+        set { UserDefaults.standard.set(newValue?.trimmingCharacters(in: .whitespacesAndNewlines), forKey: key) }
+    }
+
+    /// The first name of the Mac's account, as a suggestion in setup.
+    static var suggestedName: String {
+        NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
     }
 }

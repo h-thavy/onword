@@ -40,7 +40,7 @@ struct Meeting: Codable, Identifiable, Equatable {
     var speakersURL: URL { folder.appendingPathComponent("speakers.jsonl") }
 
     func name(for speaker: String) -> String {
-        speakerNames[speaker] ?? (speaker == "me" ? "Me" : speaker.uppercased())
+        speakerNames[speaker] ?? (speaker == "me" ? (UserProfile.name ?? "Me") : speaker.uppercased())
     }
 
     /// Speakers in order of first appearance.

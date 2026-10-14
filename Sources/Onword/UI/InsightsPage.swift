@@ -62,7 +62,7 @@ struct InsightsPage: View {
                             if tab == item { Rectangle().fill(Theme.ink).frame(height: 2) }
                         }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plainPointer)
             }
             Spacer()
         }
@@ -471,7 +471,7 @@ private struct StreakCard: View {
         Button(action: action) {
             Image(systemName: name).font(.system(size: 12, weight: .semibold)).frame(width: 20, height: 20)
         }
-        .buttonStyle(.plain).foregroundStyle(Theme.inkTertiary).opacity(enabled ? 1 : 0.3).disabled(!enabled)
+        .buttonStyle(.plainPointer).foregroundStyle(Theme.inkTertiary).opacity(enabled ? 1 : 0.3).disabled(!enabled)
     }
 
     private var legend: some View {
@@ -610,7 +610,7 @@ private struct ShareBadge: View {
             .scaleEffect(hovering ? 1.1 : 1)
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .onHover { over in
             withAnimation(.spring(duration: 0.2)) { hovering = over }
             if over {

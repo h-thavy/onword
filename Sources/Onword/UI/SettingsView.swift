@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var dialog: Dialog?
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var showInDock = DockIcon.isShown
+    @State private var userName = UserProfile.name ?? ""
     @AppStorage("showFlowBar") private var showFlowBar = true
     @AppStorage("scratchpadOpenBehavior") private var scratchpadOpenBehavior = "resume"
     @AppStorage(HistoryRetention.key) private var historyRetention = HistoryRetention.keep.rawValue
@@ -107,7 +108,7 @@ struct SettingsView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(tab == item ? Theme.buttonFill : .clear))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plainPointer)
             }
         }
     }
@@ -121,13 +122,13 @@ struct SettingsView: View {
                 Image(systemName: "arrow.down.circle.fill").font(.system(size: 14)).foregroundStyle(Theme.tileRing)
                     .frame(width: 28, height: 28).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help("Onword \(version) is available — click to see how to update")
+            .buttonStyle(.plainPointer).help("Onword \(version) is available — click to see how to update")
         case .upToDate, .unknown:
             Button { updates.check() } label: {
                 Image(systemName: updates.state == .upToDate ? "checkmark.icloud" : "icloud")
                     .font(.system(size: 13)).frame(width: 28, height: 28).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help(updates.state == .upToDate ? "Up to date; check again?" : "Check for updates")
+            .buttonStyle(.plainPointer).help(updates.state == .upToDate ? "Up to date; check again?" : "Check for updates")
         }
     }
 
@@ -136,6 +137,14 @@ struct SettingsView: View {
     private var general: some View {
         SettingsPage(title: "General") {
             SettingsSection {
+                SettingsLine("Your name", "Used in greetings and for you in meeting notes.") {
+                    TextField("Name", text: $userName)
+                        .textFieldStyle(.plain).font(Theme.sans(15))
+                        .padding(.horizontal, 12).frame(height: 36)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
+                        .onChange(of: userName) { _, value in UserProfile.name = value }
+                }
                 SettingsLine("Shortcuts", rich: Text("Hold \(Text(dictation.hotkey.title).fontWeight(.semibold).foregroundColor(Theme.ink)) and speak. Double-tap for hands-free, Esc cancels.")) {
                     Button("Change") { dialog = .shortcut }.buttonStyle(SecondaryButtonStyle())
                 }

@@ -87,6 +87,13 @@ final class WindowManager: NSObject, NSWindowDelegate {
         window.title = "Onword"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        // An empty unified toolbar makes the title-bar area 52 pt tall with the traffic lights centred in
+        // it, like Wispr Flow; the Hub's own strip (with the sidebar toggle) is drawn underneath.
+        let toolbar = NSToolbar(identifier: "OnwordHub")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.backgroundColor = NSColor(Theme.frame)

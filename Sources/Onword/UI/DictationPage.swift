@@ -12,7 +12,7 @@ struct DictationPage: View {
     var body: some View {
         PageScroll(maxWidth: 1046) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(greeting).font(Theme.sans(24, .semibold))
+                Text(UserProfile.name.map { "\(greeting), \($0)" } ?? greeting).font(Theme.sans(24, .semibold))
                 HStack(spacing: 5) {
                     Text("Hold").foregroundStyle(Theme.inkTertiary)
                     GlowChip(text: dictation.hotkey.chip)

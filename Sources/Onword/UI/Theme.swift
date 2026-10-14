@@ -156,7 +156,9 @@ struct PillButtonStyle: ButtonStyle {
     /// Draw a 1-pt outline instead of the sand fill (the "outline" variant).
     var bordered = false
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         PillBody(configuration: configuration, prominent: prominent, tint: tint, bordered: bordered)
     }
 }
@@ -213,7 +215,7 @@ struct IconButton: View {
                 .overlay(RoundedRectangle(cornerRadius: box > 32 ? 8 : 6)
                     .strokeBorder(bordered ? Theme.border : .clear))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .help(help)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
@@ -244,7 +246,7 @@ struct SearchField: View {
             TextField(prompt, text: $text).textFieldStyle(.plain).font(Theme.sans(15))
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.inkTertiary) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plainPointer)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -396,4 +398,30 @@ enum Appearance: String, CaseIterable, Identifiable {
         case .system: nil
         }
     }
+}
+
+// MARK: - Pointer cursor
+
+extension View {
+    /// Shows the pointing-hand cursor while the pointer is over this view (clickable things, as in Wispr Flow).
+    func pointerCursor(_ enabled: Bool = true) -> some View {
+        onContinuousHover { phase in
+            guard enabled else { return }
+            switch phase {
+            case .active: NSCursor.pointingHand.set()
+            case .ended: NSCursor.arrow.set()
+            }
+        }
+    }
+}
+
+/// `.plain`, plus the pointing-hand cursor.
+struct PlainPointerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.pointerCursor()
+    }
+}
+
+extension ButtonStyle where Self == PlainPointerButtonStyle {
+    static var plainPointer: PlainPointerButtonStyle { PlainPointerButtonStyle() }
 }

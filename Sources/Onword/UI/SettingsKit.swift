@@ -109,7 +109,9 @@ struct SecondaryButtonStyle: ButtonStyle {
     var fullWidth = true
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.sans(15, .semibold))
             .lineLimit(1)
@@ -127,7 +129,9 @@ struct SecondaryButtonStyle: ButtonStyle {
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.sans(15, .medium))
             .padding(.horizontal, 16).padding(.vertical, 8)
@@ -140,7 +144,9 @@ struct PrimaryButtonStyle: ButtonStyle {
 
 /// Wispr's switch: 42×25 track, 21 pt thumb, warm grey off, ink on.
 struct SettingsSwitchStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         Capsule()
             .fill(configuration.isOn ? Theme.primary : Theme.switchOff)
             .frame(width: 42, height: 25)
@@ -184,7 +190,9 @@ struct SettingsSelect<Items: View>: View {
 }
 
 private struct SelectTriggerStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 12).frame(height: 36)
             .frame(maxWidth: .infinity)
@@ -248,6 +256,6 @@ struct DialogOption: View {
             .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Theme.buttonFill : Theme.frame))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
     }
 }

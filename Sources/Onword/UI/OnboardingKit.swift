@@ -164,7 +164,7 @@ struct BackButton: View {
             .font(Theme.sans(15, .medium)).foregroundStyle(OB.tertiary)
             .padding(4).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
     }
 }
 
@@ -179,7 +179,9 @@ struct OBButtonStyle: ButtonStyle {
     var fullWidth = false
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         configuration.label
             .font(size == .extraSmall ? Theme.sans(12, .medium) : Theme.sans(15, kind == .secondary ? .semibold : .medium))
             .lineLimit(1)

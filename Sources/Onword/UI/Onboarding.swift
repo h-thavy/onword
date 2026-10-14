@@ -37,7 +37,7 @@ enum Onboarding {
 
 struct OnboardingView: View {
     enum Step: Int, CaseIterable {
-        case welcome, download, permissions, hotkey, holdToTalk, handsFree, done
+        case welcome, name, download, permissions, hotkey, holdToTalk, handsFree, done
     }
 
     @State private var step: Step = Self.initialStep
@@ -62,6 +62,7 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
+                case .name: NameStep(back: back, next: next)
                 case .download: DownloadStep(back: back, next: next)
                 case .permissions: PermissionsStep(back: back, next: next)
                 case .hotkey: HotkeyStep(back: back, next: next)
@@ -85,7 +86,7 @@ struct OnboardingView: View {
     /// Progress sections: Get started · Download · Permissions · Set up · Learn.
     private var section: Int {
         switch step {
-        case .welcome: 0
+        case .welcome, .name: 0
         case .download: 1
         case .permissions: 2
         case .hotkey: 3
@@ -132,6 +133,44 @@ private struct WelcomeStep: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 220, height: 220)
                 .shadow(color: OB.ink.opacity(0.15), radius: 30, y: 20)
         }
+    }
+}
+
+/// "What should we call you?" — the name shown in greetings and meeting notes. Pre-filled from the Mac's account.
+private struct NameStep: View {
+    let back: () -> Void
+    let next: () -> Void
+    @State private var name = UserProfile.name ?? UserProfile.suggestedName
+    @FocusState private var focused: Bool
+
+    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        CenteredStep(back: back) {
+            Text("What should we call you?").font(OB.title)
+            Text("Onword uses your name in greetings and in your meeting notes. It stays on this Mac.")
+                .font(OB.subtitle).lineSpacing(10).frame(maxWidth: 520)
+        } content: {
+            TextField("Your name", text: $name)
+                .textFieldStyle(.plain)
+                .font(Theme.sans(24, .medium))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20).frame(height: 64)
+                .background(RoundedRectangle(cornerRadius: 12).fill(OB.background))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(focused ? OB.progress : OB.cardBorder, lineWidth: focused ? 2 : 1))
+                .frame(maxWidth: 420)
+                .focused($focused)
+                .onSubmit(save)
+                .onAppear { focused = true }
+        } footer: {
+            FooterButton(title: "Continue", enabled: !trimmed.isEmpty, action: save)
+        }
+    }
+
+    private func save() {
+        guard !trimmed.isEmpty else { return }
+        UserProfile.name = trimmed
+        next()
     }
 }
 
@@ -417,7 +456,7 @@ private struct ShortcutLine: View {
                     }
                 }
             } label: { Text("Change").font(Theme.sans(15, .semibold)) }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.borderlessButton).pointerCursor().menuIndicator(.hidden).fixedSize()
         }
         .font(Theme.sans(15))
     }
@@ -681,7 +720,7 @@ private struct DoneStep: View {
 
     var body: some View {
         CenteredStep(back: back) {
-            Text("You’re all set").font(OB.title)
+            Text(UserProfile.name.map { "You’re all set, \($0)" } ?? "You’re all set").font(OB.title)
             Text("Onword lives in the Flow Bar above your Dock and in the menu bar.").font(OB.subtitle)
         } content: {
             OBCard(widget: true) {

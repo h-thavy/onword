@@ -206,7 +206,7 @@ private struct MeetingDetail: View {
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 26, height: 26)
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.borderlessButton).pointerCursor()
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
@@ -230,7 +230,7 @@ private struct MeetingDetail: View {
                                 .background(Capsule().fill(Theme.frame))
                                 .overlay(Capsule().strokeBorder(Theme.border))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.plainPointer)
                             .help("Rename — use a name another speaker has to merge them")
                         }
                     }
@@ -444,7 +444,7 @@ private struct TodoRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
     }
 }
 
@@ -674,7 +674,7 @@ struct ConnectCalendarCard: View {
                     .font(Theme.sans(11.5)).foregroundStyle(Theme.inkTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Open Internet Accounts") { CalendarService.openInternetAccounts() }
-                    .buttonStyle(.plain).font(Theme.sans(11.5, .semibold))
+                    .buttonStyle(.plainPointer).font(Theme.sans(11.5, .semibold))
             } else if let error = google.lastError {
                 Text(error).font(Theme.sans(11.5)).foregroundStyle(.orange)
             }

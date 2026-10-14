@@ -20,7 +20,7 @@ struct ScratchpadPage: View {
                         .background(Capsule().fill(Theme.shortcutPill))
                         .overlay(Capsule().strokeBorder(Theme.shortcutPillRing))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plainPointer)
                 .help("Open the Scratchpad window from anywhere")
             }
             HeroCard(before: "For quick thoughts ", italic: "you", after: " want to come back to",

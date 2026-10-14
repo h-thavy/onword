@@ -69,7 +69,9 @@ private struct TopBar: View {
 }
 
 private struct ToastLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
+
+    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
         HStack(spacing: 6) {
             configuration.icon.font(.system(size: 11, weight: .semibold))
             configuration.title
@@ -121,7 +123,7 @@ private struct TabItem: View {
                     .background(RoundedRectangle(cornerRadius: 3).fill(closeHover ? Theme.scratchpadActive : .clear))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plainPointer)
             .onHover { closeHover = $0 }
             .opacity(hovering || isActive ? 1 : 0)
             .help("Close tab (⌘W)")
@@ -171,7 +173,7 @@ private struct ToolbarButton: View {
                 .contentShape(Rectangle())
                 .opacity(isEnabled ? 1 : 0.35)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .help(help)
         .accessibilityLabel(help)
         .onHover { hovering = $0 }
@@ -280,7 +282,7 @@ private struct NotesSidebar: View {
                 Button { query = "" } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.scratchpadMuted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plainPointer)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
@@ -334,7 +336,7 @@ private struct RailButton: View {
             .background(Rectangle().fill(active || hovering ? Theme.scratchpadActive : .clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .help(help)
         .accessibilityLabel(label)
         .onHover { hovering = $0 }
@@ -422,7 +424,7 @@ private struct RowAction: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.border : .clear))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plainPointer)
         .help(help)
         .onHover { hovering = $0 }
     }
@@ -489,7 +491,7 @@ private struct EditorCard: View {
                                 .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
                                 .contentShape(Circle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plainPointer)
                         .help("Delete note")
                     }
                     Button { window.copyActiveNote() } label: {
@@ -504,7 +506,7 @@ private struct EditorCard: View {
                         .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
                         .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plainPointer)
                     .disabled(note.body.isEmpty)
                     .opacity(note.body.isEmpty ? 0.4 : 1)
                     .help("Copy note")
