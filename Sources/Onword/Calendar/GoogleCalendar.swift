@@ -27,7 +27,12 @@ final class GoogleCalendar: ObservableObject {
     private let config: Config? = {
         guard let url = Bundle.main.url(forResource: "GoogleOAuth", withExtension: "plist"),
               let dict = NSDictionary(contentsOf: url) as? [String: String],
-              let id = dict["ClientID"], !id.isEmpty, !id.hasPrefix("YOUR_") else { return nil }
+              var id = dict["ClientID"]?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
+              !id.hasPrefix("YOUR_") else { return nil }
+        // A client ID pasted with its domain already on it can end up with the domain twice, which Google
+        // rejects as "OAuth client was not found".
+        let domain = ".apps.googleusercontent.com"
+        while id.hasSuffix(domain + domain) { id.removeLast(domain.count) }
         return Config(clientID: id, clientSecret: dict["ClientSecret"])
     }()
 
