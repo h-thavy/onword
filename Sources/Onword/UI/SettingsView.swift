@@ -16,7 +16,6 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var showInDock = DockIcon.isShown
     @State private var userName = UserProfile.name ?? ""
-    @State private var nameSaved = false
     @AppStorage("showFlowBar") private var showFlowBar = true
     @AppStorage("scratchpadOpenBehavior") private var scratchpadOpenBehavior = "resume"
     @AppStorage(HistoryRetention.key) private var historyRetention = HistoryRetention.keep.rawValue
@@ -79,9 +78,6 @@ struct SettingsView: View {
             Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 2)
             sidebarGroup("Privacy", [.privacy])
             Spacer()
-            Text("Changes save automatically")
-                .font(Theme.sans(12)).foregroundStyle(Theme.inkFaint)
-                .padding(.horizontal, 8)
             HStack {
                 Text("Onword v\(UpdateChecker.currentVersion)")
                 Spacer()
@@ -141,27 +137,13 @@ struct SettingsView: View {
     private var general: some View {
         SettingsPage(title: "General") {
             SettingsSection {
-                SettingsLine("Your name", rich: nameDescription) {
-                    // Typed text is saved with Save (or Return); everything else in Settings applies instantly.
-                    HStack(spacing: 6) {
-                        TextField("Name", text: $userName)
-                            .textFieldStyle(.plain).font(Theme.sans(15))
-                            .onSubmit(saveName)
-                        if nameChanged {
-                            Button(action: saveName) {
-                                Text("Save").font(Theme.sans(13, .semibold)).foregroundStyle(Theme.onPrimary)
-                                    .padding(.horizontal, 10).frame(height: 28)
-                                    .background(RoundedRectangle(cornerRadius: 5).fill(Theme.primary))
-                            }
-                            .buttonStyle(.plainPointer)
-                            .keyboardShortcut(.defaultAction)
-                            .transition(.opacity)
-                        }
-                    }
-                    .padding(.leading, 12).padding(.trailing, nameChanged ? 4 : 12).frame(height: 36)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(nameChanged ? Theme.tileRing : Theme.border))
-                    .animation(.easeOut(duration: 0.12), value: nameChanged)
+                SettingsLine("Your name", "Used in greetings and for you in meeting notes.") {
+                    TextField("Name", text: $userName)
+                        .textFieldStyle(.plain).font(Theme.sans(15))
+                        .padding(.horizontal, 12).frame(height: 36)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
+                        .onChange(of: userName) { _, value in UserProfile.name = value }
                 }
                 SettingsLine("Shortcuts", rich: Text("Hold \(Text(dictation.hotkey.title).fontWeight(.semibold).foregroundColor(Theme.ink)) and speak. Double-tap for hands-free, Esc cancels.")) {
                     Button("Change") { dialog = .shortcut }.buttonStyle(SecondaryButtonStyle())
@@ -203,23 +185,6 @@ struct SettingsView: View {
                 }
             }
         }
-    }
-
-    private var nameChanged: Bool {
-        userName.trimmingCharacters(in: .whitespacesAndNewlines) != (UserProfile.name ?? "")
-    }
-
-    private var nameDescription: Text {
-        nameSaved ? Text("Saved \(Image(systemName: "checkmark"))").foregroundColor(Color(red: 0.25, green: 0.55, blue: 0.35))
-                  : Text("Used in greetings and for you in meeting notes.")
-    }
-
-    private func saveName() {
-        guard nameChanged else { return }
-        UserProfile.name = userName
-        userName = UserProfile.name ?? ""
-        nameSaved = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { nameSaved = false }
     }
 
     private var microphoneDescription: String {
