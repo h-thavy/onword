@@ -9,6 +9,12 @@ enum Onboarding {
     /// at that step on launch, e.g. to check a screen without clicking through.
     static let debugStep = ProcessInfo.processInfo.environment["ONWORD_ONBOARDING_STEP"]
 
+    /// First-run setup hasn't reached the languages step's Continue yet, so no model should download.
+    static var waitingForLanguages: Bool {
+        guard !isComplete, debugStep == nil else { return false }
+        return (savedStep ?? 0) <= OnboardingView.Step.languages.rawValue
+    }
+
     static var isComplete: Bool {
         get { UserDefaults.standard.bool(forKey: "onboardingComplete") }
         set {
@@ -36,8 +42,14 @@ enum Onboarding {
 }
 
 struct OnboardingView: View {
+    /// The models are downloaded and loaded; the shortcut and practice steps wait for this.
+    @ObservedObject private var dictation = DictationController.shared
+    private var modelsReady: Bool {
+        dictation.modelReady && dictation.pendingModel == nil && dictation.speakerModels == .ready
+    }
+
     enum Step: Int, CaseIterable {
-        case welcome, name, download, permissions, hotkey, holdToTalk, handsFree, done
+        case welcome, name, languages, download, permissions, hotkey, holdToTalk, handsFree, done
     }
 
     @State private var step: Step = Self.initialStep
@@ -49,9 +61,6 @@ struct OnboardingView: View {
         }
         guard let saved = Onboarding.savedStep.flatMap(Step.init(rawValue:)) else { return .welcome }
         // Later steps need the models and permissions; if one went missing meanwhile, go back to that step.
-        let modelsOnDisk = Transcriber.localFolder(for: DictationController.shared.model, downloadBase: AppPaths.models) != nil
-            && SpeakerModels.isDownloaded
-        if saved.rawValue > Step.download.rawValue, !modelsOnDisk { return .download }
         if saved.rawValue > Step.permissions.rawValue, !Permissions.allGranted { return .permissions }
         return saved
     }
@@ -63,8 +72,13 @@ struct OnboardingView: View {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
                 case .name: NameStep(back: back, next: next)
+                case .languages: LanguagesStep(back: back, next: next)
                 case .download: DownloadStep(back: back, next: next)
                 case .permissions: PermissionsStep(back: back, next: next)
+                // The download may still be running after Permissions: the key and speaking tests wait
+                // for it, showing its progress, then continue on their own.
+                case .hotkey where !modelsReady, .holdToTalk where !modelsReady, .handsFree where !modelsReady:
+                    DownloadStep(back: back, next: next, gate: true)
                 case .hotkey: HotkeyStep(back: back, next: next)
                 case .holdToTalk: HoldToTalkStep(back: back, next: next)
                 case .handsFree: HandsFreeStep(back: back, next: next)
@@ -86,7 +100,7 @@ struct OnboardingView: View {
     /// Progress sections: Get started · Download · Permissions · Set up · Learn.
     private var section: Int {
         switch step {
-        case .welcome, .name: 0
+        case .welcome, .name, .languages: 0
         case .download: 1
         case .permissions: 2
         case .hotkey: 3
@@ -174,31 +188,114 @@ private struct NameStep: View {
     }
 }
 
+/// Wispr's "Set all the languages you speak": pick the languages you dictate in. This decides which speech
+/// model gets downloaded next (English-only, or the multilingual one for anything else).
+private struct LanguagesStep: View {
+    let back: () -> Void
+    let next: () -> Void
+    @ObservedObject private var dictation = DictationController.shared
+    @State private var selection: [String] = DictationController.shared.selectedLanguages.isEmpty
+        ? ["en"] : DictationController.shared.selectedLanguages
+    @State private var showAll = false
+
+    /// This Mac's languages first, then common ones, plus anything picked in the full list.
+    private var suggestions: [String] {
+        var seen = Set<String>()
+        return (Languages.preferred + ["en", "es", "zh", "ja", "ko", "fr", "de", "km", "th", "vi", "pt", "hi"] + selection)
+            .filter { Languages.all.contains($0) && seen.insert($0).inserted }
+    }
+
+    private var needsMultilingual: Bool { selection != ["en"] }
+
+    var body: some View {
+        CenteredStep(back: back) {
+            Text("Set all the languages you speak").font(OB.title)
+            Text("Onword works in \(Languages.all.count) languages. Pick all that apply — with more than one, it detects which you’re speaking.")
+                .font(OB.subtitle).lineSpacing(10).frame(maxWidth: 520)
+        } content: {
+            VStack(spacing: 16) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+                    ForEach(suggestions, id: \.self) { tile($0) }
+                }
+                Button { showAll = true } label: {
+                    Label("More languages…", systemImage: "magnifyingglass")
+                }
+                .buttonStyle(OBButtonStyle(kind: .outline, size: .small))
+                Text(needsMultilingual
+                     ? "Languages other than English use a one-time download (\(Transcriber.Model.variant(dictation.model.tier, english: false).downloadSize))."
+                     : "English uses a fast English-only model (\(dictation.model.downloadSize)).")
+                    .font(Theme.sans(15)).foregroundStyle(OB.tertiary)
+            }
+        } footer: {
+            FooterButton(title: "Continue", enabled: !selection.isEmpty) {
+                dictation.chooseLanguages(selection)
+                dictation.loadModelIfNeeded()   // English: start the download now (other languages already started)
+                next()
+            }
+        }
+        .overlay {
+            if showAll {
+                ZStack {
+                    Color.black.opacity(0.3).onTapGesture { showAll = false }
+                    LanguagePicker {
+                        selection = dictation.selectedLanguages.isEmpty ? selection : dictation.selectedLanguages
+                        showAll = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func tile(_ code: String) -> some View {
+        let isSelected = selection.contains(code)
+        return Button {
+            if let index = selection.firstIndex(of: code) { selection.remove(at: index) } else { selection.append(code) }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(Languages.name(code)).font(Theme.sans(15, .semibold)).foregroundStyle(OB.ink).lineLimit(1)
+                Text(Languages.nativeName(code) ?? " ").font(Theme.sans(12)).foregroundStyle(OB.muted).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? OB.hex(0xFAF1FF) : OB.background))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? OB.progress : OB.cardBorder, lineWidth: isSelected ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plainPointer)
+    }
+}
+
 /// Downloads what Onword needs before it can be used. Starts on its own at launch; this step waits for it.
 private struct DownloadStep: View {
     let back: () -> Void
     let next: () -> Void
+    /// Shown in place of the shortcut test while the download finishes; it moves on by itself.
+    var gate = false
     @ObservedObject private var dictation = DictationController.shared
 
-    private var ready: Bool { dictation.modelReady && dictation.speakerModels == .ready }
+    private var ready: Bool { dictation.modelReady && dictation.pendingModel == nil && dictation.speakerModels == .ready }
 
     var body: some View {
         CenteredStep(back: back) {
-            Text("Getting Onword ready").font(OB.title)
-            Text("Onword understands you right here on your Mac, so it downloads its models once. After that it works offline.")
+            Text(gate ? "Finishing the download…" : "Getting Onword ready").font(OB.title)
+            Text(gate ? "Your shortcut and practice dictation need the speech model. This continues on its own as soon as it’s ready."
+                      : "Onword understands you right here on your Mac, so it downloads its models once. After that it works offline.")
                 .font(OB.subtitle).lineSpacing(10).frame(maxWidth: 520)
         } content: {
             OBCard(widget: true) {
-                row("Speech model", "Turns your voice into text · \(dictation.model.downloadSize)") { speech }
+                row("Speech model", "Turns your voice into text · \((dictation.pendingModel?.model ?? dictation.model).downloadSize)") { speech }
                 Divider().overlay(OB.sand)
                 row("Speaker model", "Tells voices apart in meeting notes · 11 MB") { speaker }
                 Divider().overlay(OB.sand)
                 row("Meeting summaries", summariesDetail) { summaries }
             }
-            Text(ready ? "All downloaded." : "Keep Onword open and connected to the internet until this finishes.")
+            Text(ready ? "All downloaded."
+                 : gate ? "Keep Onword open and connected to the internet."
+                 : "You can continue — the download keeps going in the background.")
                 .font(Theme.sans(15)).foregroundStyle(OB.tertiary).padding(.top, 16)
         } footer: {
-            FooterButton(title: "Continue", enabled: ready, action: next)
+            // The download keeps going in the background; only the shortcut and practice steps wait for it.
+            if !gate { FooterButton(title: "Continue", action: next) }
         }
     }
 
@@ -214,7 +311,18 @@ private struct DownloadStep: View {
     }
 
     @ViewBuilder private var speech: some View {
-        if dictation.modelReady {
+        if let pending = dictation.pendingModel {
+            // A chosen language's model (e.g. multilingual) is downloading.
+            if let failure = pending.failure {
+                failed(failure) { dictation.retryPendingModel() }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView(value: pending.progress).frame(width: 110).tint(OB.progress)
+                    Text("\(Int(pending.progress * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
+                }
+                .font(Theme.sans(15, .semibold))
+            }
+        } else if dictation.modelReady {
             done
         } else if let failure = dictation.modelFailure {
             failed(failure) { dictation.retryModel() }

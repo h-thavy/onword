@@ -263,7 +263,9 @@ final class DictationController: ObservableObject {
             }
         }
         refreshPermissions()
-        loadModel()
+        // During first-run setup the languages step decides which model to download (English-only or
+        // multilingual), so the download starts there instead of here.
+        if !Onboarding.waitingForLanguages { loadModel() } else { state = .loadingModel; modelStatus = "Waiting for your languages…" }
         ensureSpeakerModels()
         // Test hook: ONWORD_TEST_LANGUAGE=ja picks a language at launch, as the language picker would.
         if let code = ProcessInfo.processInfo.environment["ONWORD_TEST_LANGUAGE"] { chooseLanguage(code) }
@@ -391,6 +393,12 @@ final class DictationController: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
             }
         }
+    }
+
+    /// Starts loading (and if needed downloading) the model for the chosen languages, if nothing's loading yet.
+    func loadModelIfNeeded() {
+        guard !modelReady, pendingModel == nil, modelProgress == nil, modelFailure == nil else { return }
+        loadModel()
     }
 
     /// Tries loading the model again now (the "Try again" buttons).
