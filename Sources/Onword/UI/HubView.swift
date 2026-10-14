@@ -129,10 +129,11 @@ private struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 2) {
-                LogoMark(size: 20).frame(height: 25).padding(.leading, 3)
+                // The mark's glyph fills about half its box, so 34 pt makes the bars as tall as the wordmark.
+                LogoMark(size: 34).padding(.leading, -4)
                 if !collapsed {
                     // Onword's serif wordmark, sized like Wispr's 20 pt-tall wordmark.
-                    Text("Onword").font(Theme.serif(26)).padding(.leading, 6)
+                    Text("Onword").font(Theme.serif(26)).padding(.leading, 2)
                 }
             }
             .padding(.horizontal, 5).padding(.vertical, 4)
