@@ -42,6 +42,8 @@ struct Meeting: Codable, Identifiable, Equatable {
     var resumedCount: Int?
     /// Short meeting without notes: the summary waits for "Generate summary" (Wispr's deferred meetings).
     var summaryDeferred: Bool?
+    /// Folders this note is filed in (a draft for an upcoming meeting can be filed before it's recorded).
+    var folderIDs: [UUID]?
 
     var folder: URL { AppPaths.meetings.appendingPathComponent(id.uuidString, isDirectory: true) }
     var micURL: URL { folder.appendingPathComponent("mic.caf") }
@@ -150,7 +152,7 @@ final class MeetingStore: ObservableObject {
             // A meeting still marked "recording" after a relaunch was cut off by a quit or crash.
             var m = meeting
             // An untouched draft (opened from the calendar, nothing written) isn't kept.
-            if m.status == .draft, m.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if m.status == .draft, m.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, (m.folderIDs ?? []).isEmpty {
                 try? FileManager.default.removeItem(at: m.folder)
                 return nil
             }

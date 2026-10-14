@@ -110,6 +110,16 @@ final class NotetakerFlow {
                 HubRouter.shared.selectedMeetingID = meetings[index].id
             }
         }
+        // ONWORD_TEST_FOLDERS=grid|detail|editor shows the Folders tab, the first folder, or the Create dialog.
+        if let folders = env["ONWORD_TEST_FOLDERS"] {
+            HubRouter.shared.notesTab = .folders
+            if folders == "detail" { HubRouter.shared.openFolderID = FolderStore.shared.folders.first?.id }
+            if folders == "editor" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    FolderEditor.shared.create(prefill: "Design reviews", over: NSApp.windows.first { $0.title == "Onword" })
+                }
+            }
+        }
         guard let island = env["ONWORD_TEST_ISLAND"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             let next = CalendarService.shared.upcoming.first

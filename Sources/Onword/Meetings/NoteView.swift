@@ -116,6 +116,7 @@ struct NotePills: View {
     var body: some View {
         HStack(spacing: 8) {
             pill { Text(NT.datePill(meeting.startedAt)) }
+            FolderChip(meeting: meeting)
             if !people.isEmpty {
                 Button { showingPeople.toggle() } label: {
                     pill {

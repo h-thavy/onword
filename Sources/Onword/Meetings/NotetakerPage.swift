@@ -14,6 +14,7 @@ struct NotetakerPage: View {
     enum Preview: Equatable {
         case upcoming(UpcomingMeeting)
         case note(UUID)
+        case folder(UUID)
     }
 
     var body: some View {
@@ -37,6 +38,10 @@ struct NotetakerPage: View {
     }
 
     private var defaultPreview: Preview? {
+        // On the Folders tab the panel shows the first folder until one is hovered.
+        if HubRouter.shared.notesTab == .folders, HubRouter.shared.openFolderID == nil, let first = FolderStore.shared.folders.first {
+            return .folder(first.id)
+        }
         if let next = CalendarService.shared.upcoming.first { return .upcoming(next) }
         return store.meetings.first(where: { $0.status != .draft }).map { .note($0.id) }
     }
@@ -497,13 +502,16 @@ private struct PastNotesSection: View {
         return result.map { (day: $0.0, meetings: $0.1) }
     }
 
+    @ObservedObject private var router = HubRouter.shared
+    @Namespace private var underline
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 0) {
-                Text("Past notes").font(Theme.sans(15, .semibold)).padding(12)
-                    .overlay(alignment: .bottom) { Rectangle().fill(Theme.ink).frame(height: 2).padding(.horizontal, 12) }
+                listTab("Past notes", .past)
+                listTab("Folders", .folders)
                 Spacer()
-                if searching {
+                if router.notesTab == .past && searching {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Theme.inkTertiary)
                         TextField("Search past notes", text: $query).textFieldStyle(.plain).font(Theme.sans(13))
@@ -515,14 +523,17 @@ private struct PastNotesSection: View {
                     .padding(.horizontal, 8).frame(width: 200, height: 28)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border))
-                } else {
+                } else if router.notesTab == .past {
                     BarAction(icon: "magnifyingglass", help: "Search past meetings") { searching = true }
                 }
             }
             .padding(.horizontal, -12)
             .background(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
+            .animation(.spring(response: 0.15, dampingFraction: 0.9), value: router.notesTab)
 
-            if groups.isEmpty {
+            if router.notesTab == .folders {
+                FoldersTab(preview: $preview)
+            } else if groups.isEmpty {
                 EmptyState(title: query.isEmpty ? "Your meetings will appear here" : "No notes found for “\(query)”")
             } else {
                 VStack(alignment: .leading, spacing: 20) {
@@ -535,6 +546,180 @@ private struct PastNotesSection: View {
                 }
             }
         }
+    }
+}
+
+extension PastNotesSection {
+    /// 44-pt tab, 15/600, with the 2-pt underline under the selected one.
+    fileprivate func listTab(_ title: String, _ tab: HubRouter.NotesListTab) -> some View {
+        let selected = router.notesTab == tab
+        return Button {
+            router.notesTab = tab
+            router.openFolderID = nil
+            preview = nil
+        } label: {
+            Text(title).font(Theme.sans(15, .semibold))
+                .foregroundStyle(selected ? Theme.ink : NT.neutral500)
+                .padding(12)
+                .overlay(alignment: .bottom) {
+                    if selected {
+                        Rectangle().fill(Theme.ink).frame(height: 2).padding(.horizontal, 12)
+                            .matchedGeometryEffect(id: "notesTab", in: underline)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plainPointer)
+    }
+}
+
+/// The Folders tab: a two-column grid of folders, or one folder's notes.
+private struct FoldersTab: View {
+    @Binding var preview: NotetakerPage.Preview?
+    @ObservedObject private var folders = FolderStore.shared
+    @ObservedObject private var meetings = MeetingStore.shared
+    @ObservedObject private var router = HubRouter.shared
+    @State private var anchor = AnchorBox()
+
+    var body: some View {
+        Group {
+            if let id = router.openFolderID, let folder = folders.folder(id) {
+                detail(folder)
+            } else if folders.folders.isEmpty {
+                empty
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], spacing: 8) {
+                    ForEach(folders.folders) { folder in
+                        FolderRow(folder: folder, count: folders.notes(in: folder.id).count,
+                                  selected: preview == .folder(folder.id)) {
+                            router.openFolderID = folder.id
+                            preview = nil
+                        } hover: { preview = .folder(folder.id) }
+                    }
+                }
+                .padding(.bottom, 96)
+            }
+        }
+        .background(AnchorReader(box: anchor))
+    }
+
+    private var empty: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 2) {
+                Image(systemName: "folder").font(.system(size: 20)).frame(width: 40, height: 40)
+                Text("No folders").font(Theme.sans(15, .medium))
+                Text("Organize your notes").font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary)
+            }
+            Button("Create folder") { FolderEditor.shared.create(prefill: "", over: anchor.view?.window) }
+                .font(Theme.sans(12, .medium))
+                .buttonStyle(PillButtonStyle(prominent: false, bordered: true)).controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, minHeight: 266)
+        .padding(.init(top: 32, leading: 24, bottom: 24, trailing: 24))
+        .background(RoundedRectangle(cornerRadius: 16).fill(Theme.page))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.border))
+    }
+
+    private func detail(_ folder: NoteFolder) -> some View {
+        let notes = folders.notes(in: folder.id)
+        var groups: [(String, [Meeting])] = []
+        for meeting in notes {
+            let day = NT.dayBucket(meeting.startedAt)
+            if groups.last?.0 == day { groups[groups.count - 1].1.append(meeting) } else { groups.append((day, [meeting])) }
+        }
+        return VStack(alignment: .leading, spacing: 16) {
+            Button {
+                router.openFolderID = nil
+                preview = nil
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                    Text("Back")
+                }
+                .font(Theme.sans(12, .semibold)).frame(height: 28)
+            }
+            .buttonStyle(.plainPointer)
+            HStack(spacing: 4) {
+                Text(folder.name).font(Theme.sans(16, .medium)).lineLimit(1)
+                FolderMenu(folder: folder, window: anchor.view?.window)
+            }
+            if notes.isEmpty {
+                Text("No notes in this folder yet.").font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(groups, id: \.0) { group in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Overline(text: group.0, color: NT.neutral500).padding(.leading, 6)
+                            ForEach(group.1) { meeting in
+                                PastRow(meeting: meeting, preview: $preview)
+                                    .contextMenu {
+                                        Button("Remove from folder") { FolderStore.shared.toggle(folder.id, for: meeting.id) }
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 96)
+    }
+}
+
+/// One folder in the grid: 32-pt icon box, name and "N meetings", a "…" on hover.
+private struct FolderRow: View {
+    let folder: NoteFolder
+    let count: Int
+    let selected: Bool
+    let open: () -> Void
+    let hover: () -> Void
+    @State private var hovering = false
+    @State private var anchor = AnchorBox()
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: open) {
+                HStack(spacing: 12) {
+                    Image(systemName: "folder").font(.system(size: 13)).foregroundStyle(Theme.inkTertiary)
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(folder.name).font(Theme.sans(15)).lineLimit(1)
+                        Text("\(count) meeting\(count == 1 ? "" : "s")").font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .opacity(hovering || selected ? 1 : 0.7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plainPointer)
+            FolderMenu(folder: folder, window: anchor.view?.window).opacity(hovering ? 1 : 0)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(hovering || selected ? Theme.frame : .clear))
+        .background(AnchorReader(box: anchor))
+        .onHover { inside in
+            hovering = inside
+            if inside { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if hovering { hover() } } }
+        }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+    }
+}
+
+/// Edit / Delete for a folder.
+private struct FolderMenu: View {
+    let folder: NoteFolder
+    weak var window: NSWindow?
+
+    var body: some View {
+        PopMenuButton(items: [
+            .init(title: "Edit", icon: "pencil") { FolderEditor.shared.edit(folder, over: window) },
+            .init(title: "Delete", icon: "trash", destructive: true) { FolderEditor.shared.confirmDelete(folder, over: window) },
+        ]) {
+            Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.ink)
+                .frame(width: 28, height: 28).contentShape(Rectangle())
+        }
+        .help("Folder options")
     }
 }
 
@@ -567,6 +752,7 @@ private struct PastRow: View {
                         NotetakerFlow.shared.openNote(meeting.id)
                     }
                 }
+                if !live { FolderChip(meeting: meeting, inRow: true, rowHovered: hovering) }
                 let todos = meeting.activeTodos
                 if !todos.isEmpty {
                     TasksChip(done: todos.filter(\.done).count, total: todos.count) { open(tab: .tasks) }
@@ -632,6 +818,7 @@ private struct SidePreview: View {
     let preview: NotetakerPage.Preview?
     @ObservedObject private var store = MeetingStore.shared
     @ObservedObject private var summarizer = MeetingSummarizer.shared
+    @ObservedObject private var folders = FolderStore.shared
 
     var body: some View {
         ScrollView {
@@ -639,6 +826,7 @@ private struct SidePreview: View {
                 switch preview {
                 case .upcoming(let meeting): upcoming(meeting)
                 case .note(let id): if let meeting = store.meeting(id) { past(meeting) }
+                case .folder(let id): if let folder = FolderStore.shared.folder(id) { folderPreview(folder) }
                 case nil: EmptyView()
                 }
             }
@@ -696,6 +884,24 @@ private struct SidePreview: View {
     }
 
     private var divider: some View { Rectangle().fill(Theme.border).frame(height: 1) }
+
+    /// A folder: name, "N notes", and its description.
+    private func folderPreview(_ folder: NoteFolder) -> some View {
+        let count = FolderStore.shared.notes(in: folder.id).count
+        return VStack(alignment: .leading, spacing: 0) {
+            section(first: true) {
+                Text(folder.name).font(Theme.sans(18, .semibold))
+                Text("\(count) note\(count == 1 ? "" : "s")").font(Theme.sans(15))
+            }
+            if let description = folder.description, !description.isEmpty {
+                divider
+                section {
+                    Overline(text: "Description", color: Theme.inkTertiary)
+                    Text(description).font(Theme.sans(15)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 
     /// "Today • 10 - 10:30am • in 5 min".
     private func upcomingLine(_ meeting: UpcomingMeeting) -> String {

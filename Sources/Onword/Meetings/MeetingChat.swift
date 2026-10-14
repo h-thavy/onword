@@ -168,6 +168,8 @@ final class MeetingChat: ObservableObject {
         var text = "Meeting: \(meeting.displayTitle)\n"
         let people = (meeting.attendees ?? []) + (meeting.participants ?? [])
         if !people.isEmpty { text += "Participants: \(people.joined(separator: ", "))\n" }
+        let folders = FolderStore.shared.folders(of: meeting).map(\.name)
+        if !folders.isEmpty { text += "Filed in folders: \(folders.joined(separator: ", "))\n" }
         if !meeting.notes.isEmpty { text += "\nMy notes:\n\(meeting.notes.prefix(2000))\n" }
         if let summary = meeting.summary { text += "\nSummary:\n\(summary)\n" }
         // The most recent part of the transcript that fits.

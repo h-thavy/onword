@@ -43,6 +43,11 @@ final class HubRouter: ObservableObject {
     @Published var selectedMeetingID: UUID?
     /// The tab a note opens on in the Hub (Summary for finished meetings).
     @Published var noteTab: NoteTab = .summary
+    /// The Notetaker page's list tab, and the folder open in it.
+    @Published var notesTab: NotesListTab = .past
+    @Published var openFolderID: UUID?
+
+    enum NotesListTab { case past, folders }
 }
 
 /// The main window: a 52-pt title strip, then a sidebar on the warm frame and the
