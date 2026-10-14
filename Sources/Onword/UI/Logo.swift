@@ -52,6 +52,17 @@ enum Logo {
     }()
 }
 
+/// The app icon at full resolution. `NSApp.applicationIconImage` scales up a small version, which looks
+/// soft at the welcome screen's 220 pt; this draws the icon's 1024 px version.
+enum AppIconImage {
+    static let image: Image = {
+        let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns").flatMap(NSImage.init(contentsOf:))
+        let best = icon?.representations.compactMap { $0 as? NSBitmapImageRep }.max { $0.pixelsWide < $1.pixelsWide }
+        if let cg = best?.cgImage { return Image(decorative: cg, scale: 1) }
+        return Image(nsImage: NSApp.applicationIconImage)
+    }()
+}
+
 /// The mark in full colour, for the sidebar. Drawn with SwiftUI so the ink colour follows the Hub's
 /// Light/Dark setting (AppKit drawing would follow the system appearance instead).
 struct LogoMark: View {

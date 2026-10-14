@@ -144,7 +144,7 @@ private struct WelcomeStep: View {
                   description: "Onword turns your voice into text in any app, and takes notes in your meetings. Everything runs on this Mac — nothing you say leaves it.",
                   content: { EmptyView() },
                   cta: ("Get started", true, next)) {
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 220, height: 220)
+            AppIconImage.image.resizable().interpolation(.high).frame(width: 220, height: 220)
                 .shadow(color: OB.ink.opacity(0.15), radius: 30, y: 20)
         }
     }
@@ -543,7 +543,7 @@ private struct PermissionsStep: View {
 
         private func appRow(_ name: String, on: Bool, highlight: Bool) -> some View {
             HStack(spacing: 10) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 25, height: 25)
+                AppIconImage.image.resizable().interpolation(.high).frame(width: 25, height: 25)
                 Text(name).font(.system(size: 13)).foregroundStyle(OB.hex(0x1D1D1F))
                 Spacer()
                 Capsule().fill(on ? OB.hex(0xA550A7) : OB.hex(0xE3E3E3)).frame(width: 38, height: 22)

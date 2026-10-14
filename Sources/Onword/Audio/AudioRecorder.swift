@@ -49,6 +49,7 @@ final class AudioRecorder {
     private var isRunning = false
     private var restartAttempts = 0
     private var pendingSwitch: DispatchWorkItem?
+    private var pendingConfigRestart: DispatchWorkItem?
     private var lastRestart = Date.distantPast
     /// When the current mic last sent anything but pure zeros (a working mic always has some noise).
     private var lastSoundAt = Date()
@@ -119,6 +120,8 @@ final class AudioRecorder {
         isRunning = false
         pendingSwitch?.cancel()
         pendingSwitch = nil
+        pendingConfigRestart?.cancel()
+        pendingConfigRestart = nil
         watchdog?.invalidate()
         watchdog = nil
         if let defaultInputListener { AudioDevices.removeListener(defaultInputListener) }
@@ -163,7 +166,7 @@ final class AudioRecorder {
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
-            self?.restart(reason: "audio configuration changed")
+            self?.configurationChanged()
         }
         engine.prepare()
         do {
@@ -195,6 +198,22 @@ final class AudioRecorder {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
+    }
+
+    /// A device switching modes (AirPods leaving or entering headset mode) sends a burst of these, and
+    /// restarting the engine can itself cause another, so wait for them to settle, and skip the restart if
+    /// audio is still flowing.
+    private func configurationChanged() {
+        guard isRunning else { return }
+        pendingConfigRestart?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isRunning else { return }
+            let flowing = self.engine?.isRunning == true
+                && Date().timeIntervalSince(self.lock.withLock { self.lastBufferAt }) < 0.3
+            if !flowing { self.restart(reason: "audio configuration changed") }
+        }
+        pendingConfigRestart = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     /// Restarts on the newly preferred microphone if it differs from the one being recorded.
