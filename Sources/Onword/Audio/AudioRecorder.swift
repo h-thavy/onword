@@ -54,6 +54,8 @@ final class AudioRecorder {
     private var restartAttempts = 0
     private var pendingSwitch: DispatchWorkItem?
     private var pendingConfigRestart: DispatchWorkItem?
+    /// Recent configuration changes, to notice a Bluetooth mic flipping back and forth.
+    private var configChanges: [Date] = []
     private var lastRestart = Date.distantPast
     /// When the current mic last sent anything but pure zeros (a working mic always has some noise).
     private var lastSoundAt = Date()
@@ -89,6 +91,7 @@ final class AudioRecorder {
         }
         isRunning = true
         restartAttempts = 0
+        configChanges = []
         do {
             try startEngine()
         } catch {
@@ -157,16 +160,7 @@ final class AudioRecorder {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw RecorderError.noInputDevice }
 
-        // The tap converts with whatever format each buffer actually has, so a device that changes
-        // sample rate mid-stream doesn't break conversion.
-        var resampler: Resampler?
-        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
-            if resampler == nil || resampler?.inputFormat != buffer.format {
-                resampler = Resampler(from: buffer.format)
-            }
-            guard let self, let resampler else { return }
-            self.append(resampler.convert(buffer))
-        }
+        installTap(on: input)
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
@@ -185,6 +179,35 @@ final class AudioRecorder {
         deviceName = device?.name
         lock.withLock { lastBufferAt = Date(); lastSoundAt = Date() }
         log.notice("Recording from \(device?.name ?? "default microphone", privacy: .public) at \(format.sampleRate) Hz, \(format.channelCount) ch")
+    }
+
+    /// The tap converts with whatever format each buffer actually has, so a device that changes
+    /// sample rate mid-stream doesn't break conversion.
+    private func installTap(on input: AVAudioInputNode) {
+        var resampler: Resampler?
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
+            if resampler == nil || resampler?.inputFormat != buffer.format {
+                resampler = Resampler(from: buffer.format)
+            }
+            guard let self, let resampler else { return }
+            self.append(resampler.convert(buffer))
+        }
+    }
+
+    /// After a configuration change on the same microphone: starts the existing engine again instead of
+    /// building a new one. A new engine closes and reopens the mic, and with AirPods that flips them
+    /// between headset and music mode again, which causes the next change — an endless switching loop.
+    private func resumeEngine() -> Bool {
+        guard let engine else { return false }
+        let input = engine.inputNode
+        guard input.outputFormat(forBus: 0).sampleRate > 0 else { return false }
+        input.removeTap(onBus: 0)
+        installTap(on: input)
+        engine.prepare()
+        guard (try? engine.start()) != nil else { return false }
+        lock.withLock { lastBufferAt = Date() }
+        log.notice("Microphone resumed after an audio configuration change (\(input.outputFormat(forBus: 0).sampleRate) Hz)")
+        return true
     }
 
     /// The preferred microphone, unless it recently sent only zeros; then the Mac's own.
@@ -214,7 +237,19 @@ final class AudioRecorder {
             guard let self, self.isRunning else { return }
             let flowing = self.engine?.isRunning == true
                 && Date().timeIntervalSince(self.lock.withLock { self.lastBufferAt }) < 0.3
-            if !flowing { self.restart(reason: "audio configuration changed") }
+            guard !flowing else { return }
+            let now = Date()
+            self.configChanges = self.configChanges.filter { now.timeIntervalSince($0) < 8 } + [now]
+            // A Bluetooth mic that keeps switching modes: stop fighting it and use the Mac's own mic.
+            if self.configChanges.count >= 3, let current = self.currentDeviceID,
+               let device = AudioDevices.inputs().first(where: { $0.id == current }), device.isBluetooth,
+               let builtIn = AudioDevices.builtInInput {
+                Self.deadDevice = (device.uid, now.addingTimeInterval(60))
+                self.configChanges = []
+                self.restart(reason: "\(device.name) keeps switching modes; using \(builtIn.name)")
+                return
+            }
+            if !self.resumeEngine() { self.restart(reason: "audio configuration changed") }
         }
         pendingConfigRestart = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
@@ -222,17 +257,26 @@ final class AudioRecorder {
 
     /// Restarts on the newly preferred microphone if it differs from the one being recorded.
     /// macOS often announces one change twice, so this waits for things to settle.
+    ///
+    /// As in Wispr Flow: a dictation keeps its mic (a newly connected one is used from the next dictation) and
+    /// only moves when its mic is gone. Notetaker follows macOS's default input once it has settled (0.75 s)
+    /// and only when it's really a different device.
     private func microphonesChanged() {
         guard isRunning else { return }
         pendingSwitch?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.isRunning else { return }
-            let wanted = self.microphoneToUse()
-            guard let wanted, wanted.id != self.currentDeviceID else { return }
-            self.restart(reason: "microphone changed to \(wanted.name)")
+            let connected = AudioDevices.inputs()
+            let currentGone = self.currentDeviceID.map { id in !connected.contains { $0.id == id } } ?? true
+            if self.usesAutoDetect {
+                guard let wanted = self.microphoneToUse(), wanted.id != self.currentDeviceID else { return }
+                self.restart(reason: "default microphone changed to \(wanted.name)")
+            } else if currentGone, let next = self.microphoneToUse() {
+                self.restart(reason: "microphone disconnected; using \(next.name)")
+            }
         }
         pendingSwitch = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (usesAutoDetect ? 0.75 : 0.4), execute: work)
     }
 
     /// Rebuilds the engine on the (possibly new) microphone. Devices mid-switch can briefly report no

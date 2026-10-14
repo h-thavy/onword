@@ -1,4 +1,5 @@
 import CoreAudio
+import IOKit
 import Foundation
 
 /// Microphones known to Core Audio.
@@ -46,13 +47,16 @@ enum AudioDevices {
         case automatic?, systemDefault?:
             return defaultInput
         case let uid?:
-            if let chosen = all.first(where: { $0.uid == uid }) { return chosen }
+            if let chosen = all.first(where: { $0.uid == uid }), !(chosen.isBuiltIn && Clamshell.isClosed) { return chosen }
         case nil:
             break
         }
+        // With the lid closed the built-in mic can't hear you: skip it unless nothing else is there.
+        let lidClosed = Clamshell.isClosed
         for uid in MicRanking.uids where uid != systemDefault {
-            if let ranked = all.first(where: { $0.uid == uid }) { return ranked }
+            if let ranked = all.first(where: { $0.uid == uid }), !(lidClosed && ranked.isBuiltIn) { return ranked }
         }
+        if lidClosed, let other = defaultInput, !other.isBuiltIn { return other }
         return all.first(where: \.isBuiltIn) ?? defaultInput
     }
 
@@ -179,13 +183,17 @@ enum MicRanking {
     static var uids: [String] { entries.map(\.uid) }
 
     /// The ranking with connected devices not in it yet appended, as the dialog shows it.
+    /// Starts as Wispr Flow's: built-in mic, Auto-detect, then the others; mics connected later go to the end,
+    /// so a newly paired headset never outranks the built-in mic.
     static func merged(with connected: [AudioDevices.Device]) -> [Entry] {
         var list = entries
-        for device in connected where !device.isVirtual && !list.contains(where: { $0.uid == device.uid }) {
-            list.append(Entry(uid: device.uid, name: device.displayName))
-        }
+        let fresh = list.isEmpty
+        let newDevices = connected.filter { device in !device.isVirtual && !list.contains { $0.uid == device.uid } }
+            .sorted { $0.isBuiltIn && !$1.isBuiltIn }
+        for device in newDevices { list.append(Entry(uid: device.uid, name: device.displayName)) }
         if !list.contains(where: { $0.uid == AudioDevices.systemDefault }) {
-            list.insert(Entry(uid: AudioDevices.systemDefault, name: "Auto-detect"), at: min(1, list.count))
+            let afterBuiltIn = (list.firstIndex { e in connected.contains { $0.uid == e.uid && $0.isBuiltIn } } ?? -1) + 1
+            list.insert(Entry(uid: AudioDevices.systemDefault, name: "Auto-detect"), at: fresh ? min(afterBuiltIn, list.count) : list.count)
         }
         return list
     }
@@ -196,5 +204,17 @@ enum MicRanking {
         list.removeAll { $0.uid == uid }
         list.insert(Entry(uid: uid, name: name), at: 0)
         entries = list
+    }
+}
+
+/// Whether the Mac's lid is closed (with an external display), when the built-in mic can't hear you.
+enum Clamshell {
+    static var isClosed: Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        let value = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        return (value as? Bool) ?? false
     }
 }

@@ -505,6 +505,7 @@ final class DictationController: ObservableObject {
             state = .error(error.localizedDescription)
             return
         }
+        Self.tipIfBluetoothMic(recorder.deviceName)
         recordingStartedAt = Date()
         isHandsFree = false
         state = .recording
@@ -634,5 +635,20 @@ final class DictationController: ObservableObject {
 
     func openDataFolder() {
         NSWorkspace.shared.open(AppPaths.root)
+    }
+
+    /// Once: "AirPods aren't the best for dictation" (Wispr Flow shows the same tip), offering the built-in mic.
+    private static func tipIfBluetoothMic(_ name: String?) {
+        let key = "bluetoothMicTipShown"
+        guard !UserDefaults.standard.bool(forKey: key), let name,
+              let device = AudioDevices.inputs().first(where: { $0.name == name }), device.isBluetooth,
+              let builtIn = AudioDevices.builtInInput else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        FlowBarIsland.shared.show(.init(
+            title: device.isAirPods ? "AirPods aren't the best for dictation" : "Bluetooth mics aren't the best for dictation",
+            kind: .standard(status: .info, body: "They can be slow to start and make more mistakes. We recommend the built-in microphone."),
+            actions: [.init(title: "Keep \(device.name)", style: .dark) {},
+                      .init(title: "Use built-in mic", style: .lumen) { MicrophoneChoice.choose(builtIn.uid) }],
+            timeout: 10))
     }
 }
