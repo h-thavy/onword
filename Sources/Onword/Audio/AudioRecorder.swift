@@ -41,6 +41,8 @@ final class AudioRecorder {
     private var engine: AVAudioEngine?
     private var configObserver: NSObjectProtocol?
     private var defaultInputListener: AudioObjectPropertyListenerBlock?
+    private var deviceListListener: AudioObjectPropertyListenerBlock?
+    private var currentDeviceID: AudioDeviceID?
     private var watchdog: Timer?
     private var isRunning = false
     private var restartAttempts = 0
@@ -81,20 +83,10 @@ final class AudioRecorder {
             isRunning = false
             throw error
         }
-        defaultInputListener = AudioDevices.addDefaultInputListener { [weak self] in
-            guard let self, self.isRunning, self.preferredDeviceUID == nil else { return }
-            // macOS often announces one switch twice; restart once, after it settles.
-            self.pendingSwitch?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                let newDefault = AudioDevices.defaultInput?.name
-                // A configuration-change restart may already have moved us to the new device.
-                if newDefault == self.deviceName, Date().timeIntervalSince(self.lastRestart) < 1 { return }
-                self.restart(reason: "default microphone changed to \(newDefault ?? "?")")
-            }
-            self.pendingSwitch = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-        }
+        // Follow the right microphone while recording: a new system default, or (in Automatic mode) a
+        // headset being connected or disconnected.
+        defaultInputListener = AudioDevices.addDefaultInputListener { [weak self] in self?.microphonesChanged() }
+        deviceListListener = AudioDevices.addDeviceListListener { [weak self] in self?.microphonesChanged() }
         watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.isRunning else { return }
             let silentFor = Date().timeIntervalSince(self.lock.withLock { self.lastBufferAt })
@@ -115,6 +107,8 @@ final class AudioRecorder {
         watchdog = nil
         if let defaultInputListener { AudioDevices.removeListener(defaultInputListener) }
         defaultInputListener = nil
+        if let deviceListListener { AudioDevices.removeDeviceListListener(deviceListListener) }
+        deviceListListener = nil
         stopEngine()
         return lock.withLock { samples }
     }
@@ -125,14 +119,17 @@ final class AudioRecorder {
         let engine = AVAudioEngine()
         let input = engine.inputNode
 
-        // Pick the microphone: the chosen one if it's connected, otherwise the system default.
+        // Pick the microphone: per the preference (system default, Automatic = headset if connected, or a
+        // specific device), falling back to the system default.
         var device = AudioDevices.defaultInput
-        if let uid = preferredDeviceUID, let chosen = AudioDevices.device(uid: uid), let unit = input.audioUnit {
+        if let chosen = AudioDevices.resolve(preference: preferredDeviceUID), chosen.id != device?.id,
+           let unit = input.audioUnit {
             var id = chosen.id
             let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                               &id, UInt32(MemoryLayout<AudioDeviceID>.size))
             if status == noErr { device = chosen } else { log.error("Couldn't select \(chosen.name, privacy: .public): \(status)") }
         }
+        currentDeviceID = device?.id
 
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw RecorderError.noInputDevice }
@@ -173,6 +170,21 @@ final class AudioRecorder {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
+    }
+
+    /// Restarts on the newly preferred microphone if it differs from the one being recorded.
+    /// macOS often announces one change twice, so this waits for things to settle.
+    private func microphonesChanged() {
+        guard isRunning else { return }
+        pendingSwitch?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isRunning else { return }
+            let wanted = AudioDevices.resolve(preference: self.preferredDeviceUID)
+            guard let wanted, wanted.id != self.currentDeviceID else { return }
+            self.restart(reason: "microphone changed to \(wanted.name)")
+        }
+        pendingSwitch = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     /// Rebuilds the engine on the (possibly new) microphone. Devices mid-switch can briefly report no

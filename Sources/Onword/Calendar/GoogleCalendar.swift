@@ -71,14 +71,16 @@ final class GoogleCalendar: ObservableObject {
                         .init(name: "code_challenge_method", value: "S256"),
                         .init(name: "state", value: state),
                         .init(name: "access_type", value: "offline"),
-                        .init(name: "prompt", value: "consent"),
+                        // Always show Google's account chooser (with "Use another account"), then the consent screen.
+                        .init(name: "prompt", value: "select_account consent"),
                     ]
                     NSWorkspace.shared.open(components.url!)
+                    self.log.notice("Opened Google sign-in in the browser (redirect port \(port))")
                 }
             }
             listener.start(queue: .main)
             // Give up if the browser sign-in is abandoned.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 600) { [weak self] in
                 guard let self, self.isConnecting else { return }
                 self.finish(error: "Sign-in timed out. Try Connect again.")
             }
@@ -115,6 +117,7 @@ final class GoogleCalendar: ObservableObject {
                 let value = { (name: String) in items.first { $0.name == name }?.value }
 
                 let ok = value("code") != nil && value("state") == state
+                self.log.notice("Browser redirect received: \(path.split(separator: "?").first.map(String.init) ?? "", privacy: .public) code=\(value("code") != nil) error=\(value("error") ?? "none", privacy: .public)")
                 let message = ok ? "Onword is connected to Google Calendar. You can close this tab."
                                  : "Sign-in didn't complete (\(value("error") ?? "cancelled")). You can close this tab."
                 let body = "<html><body style='font-family:-apple-system;padding:48px'><h2>\(message)</h2></body></html>"
@@ -146,6 +149,7 @@ final class GoogleCalendar: ObservableObject {
             Keychain.save(email, account: "google-email")
             connectedEmail = email
             log.notice("Connected Google Calendar")
+            log.notice("Token exchange OK")
             finish(error: nil)
             CalendarService.shared.refresh(force: true)
         } catch {

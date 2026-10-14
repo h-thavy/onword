@@ -79,6 +79,7 @@ struct SettingsView: View {
             }
             SettingsRow(title: "Microphone", detail: microphoneDetail) {
                 changeMenu(microphoneName) {
+                    Button("Automatic — AirPods or headset when connected") { dictation.microphoneUID = AudioDevices.automatic }
                     Button("System default (\(AudioDevices.defaultInput?.name ?? "none"))") { dictation.microphoneUID = nil }
                     Divider()
                     ForEach(AudioDevices.inputs()) { device in Button(device.name) { dictation.microphoneUID = device.uid } }
@@ -297,11 +298,18 @@ struct SettingsView: View {
     }
 
     private var microphoneName: String {
-        dictation.microphoneUID.flatMap { AudioDevices.device(uid: $0)?.name } ?? "System default"
+        switch dictation.microphoneUID {
+        case nil: return "System default"
+        case AudioDevices.automatic?: return "Automatic"
+        case let uid?: return AudioDevices.device(uid: uid)?.name ?? "System default"
+        }
     }
 
     private var microphoneDetail: String {
-        let active = dictation.microphoneUID.flatMap { AudioDevices.device(uid: $0) } ?? AudioDevices.defaultInput
+        let active = AudioDevices.resolve(preference: dictation.microphoneUID)
+        if dictation.microphoneUID == AudioDevices.automatic {
+            return "Using \(active?.name ?? "the Mac's microphone") now. Switches to AirPods or a headset when you connect one, and back when you disconnect."
+        }
         if active?.isBluetooth == true {
             return "Bluetooth mics like AirPods switch to call-quality audio when recording and can miss the first second. The built-in mic is more reliable."
         }

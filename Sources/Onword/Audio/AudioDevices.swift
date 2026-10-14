@@ -8,6 +8,39 @@ enum AudioDevices {
         let uid: String
         let name: String
         let isBluetooth: Bool
+        /// A headset or external mic you plug in or pair (Bluetooth or USB), as opposed to the Mac's own mic
+        /// or a virtual/aggregate device.
+        let isHeadset: Bool
+    }
+
+    /// Microphone preference meaning "use a connected headset (AirPods, USB…), otherwise the system default".
+    static let automatic = "auto"
+
+    /// The microphone to record from for a stored preference: nil = system default, `automatic`, or a device UID.
+    /// A chosen device that isn't connected falls back to the system default.
+    static func resolve(preference: String?) -> Device? {
+        switch preference {
+        case nil: return defaultInput
+        case automatic?: return inputs().first(where: \.isHeadset) ?? defaultInput
+        case let uid?: return device(uid: uid) ?? defaultInput
+        }
+    }
+
+    /// Calls `onChange` on the main queue when microphones are connected or disconnected.
+    static func addDeviceListListener(_ onChange: @escaping () -> Void) -> AudioObjectPropertyListenerBlock {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let block: AudioObjectPropertyListenerBlock = { _, _ in onChange() }
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, block)
+        return block
+    }
+
+    static func removeDeviceListListener(_ block: @escaping AudioObjectPropertyListenerBlock) {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, block)
     }
 
     static func inputs() -> [Device] {
@@ -75,7 +108,9 @@ enum AudioDevices {
         var size = UInt32(MemoryLayout<UInt32>.size)
         AudioObjectGetPropertyData(id, &address, 0, nil, &size, &transport)
         let bluetooth = transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
-        return Device(id: id, uid: uid, name: string(id, kAudioObjectPropertyName) ?? uid, isBluetooth: bluetooth)
+        let headset = bluetooth || transport == kAudioDeviceTransportTypeUSB
+        return Device(id: id, uid: uid, name: string(id, kAudioObjectPropertyName) ?? uid,
+                      isBluetooth: bluetooth, isHeadset: headset)
     }
 
     private static func string(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
