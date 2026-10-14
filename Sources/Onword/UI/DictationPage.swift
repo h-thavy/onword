@@ -6,13 +6,15 @@ import SwiftUI
 struct DictationPage: View {
     @ObservedObject private var history = HistoryStore.shared
     @ObservedObject private var dictation = DictationController.shared
+    /// Redraws as soon as the name changes in Settings.
+    @AppStorage(UserProfile.key) private var userName = ""
     @State private var query = ""
     @State private var searching = false
 
     var body: some View {
         PageScroll(maxWidth: 1046) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(UserProfile.name.map { "\(greeting), \($0)" } ?? greeting).font(Theme.sans(24, .semibold))
+                Text(userName.trimmingCharacters(in: .whitespaces).isEmpty ? greeting : "\(greeting), \(userName.trimmingCharacters(in: .whitespaces))").font(Theme.sans(24, .semibold))
                 HStack(spacing: 5) {
                     Text("Hold").foregroundStyle(Theme.inkTertiary)
                     GlowChip(text: dictation.hotkey.chip)

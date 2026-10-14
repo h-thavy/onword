@@ -199,7 +199,7 @@ final class MeetingRecorder: ObservableObject {
                     // Keep names the user already set; default the rest.
                     var numbered = 0
                     for speaker in m.speakers where m.speakerNames[speaker] == nil {
-                        if speaker == "me" { m.speakerNames[speaker] = UserProfile.name ?? "Me" } else if speaker == "unknown" {
+                        if speaker == "me" { m.speakerNames[speaker] = "Me" /* shown as your current name */ } else if speaker == "unknown" {
                             m.speakerNames[speaker] = "Unknown"
                         } else {
                             numbered += 1

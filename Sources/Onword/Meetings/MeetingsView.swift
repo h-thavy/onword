@@ -4,6 +4,8 @@ import SwiftUI
 
 /// Notetaker: past notes by day on the left, the selected meeting on the right.
 struct NotetakerPage: View {
+    /// Redraws as soon as the name changes in Settings.
+    @AppStorage(UserProfile.key) private var userName = ""
     @ObservedObject private var store = MeetingStore.shared
     @ObservedObject private var recorder = MeetingRecorder.shared
     @ObservedObject private var router = HubRouter.shared
@@ -164,6 +166,8 @@ private struct MeetingRow: View {
 private struct MeetingDetail: View {
     let meeting: Meeting
     @ObservedObject private var store = MeetingStore.shared
+    /// Redraws as soon as the name changes in Settings.
+    @AppStorage(UserProfile.key) private var userName = ""
     @State private var renaming: String?
     @State private var newName = ""
 

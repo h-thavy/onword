@@ -717,6 +717,8 @@ private struct HandsFreeStep: View {
 private struct DoneStep: View {
     let back: () -> Void
     @ObservedObject private var dictation = DictationController.shared
+    /// Redraws as soon as the name changes in Settings.
+    @AppStorage(UserProfile.key) private var userName = ""
 
     var body: some View {
         CenteredStep(back: back) {
