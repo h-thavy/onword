@@ -1236,8 +1236,10 @@ struct NoteMoreMenu: View {
             })
         }
         if meeting.status != .recording {
-            items.append(.init(title: "Show audio files", icon: "folder") {
-                NSWorkspace.shared.activateFileViewerSelecting([meeting.folder])
+            items.append(.init(title: "Show recording", icon: "waveform") {
+                let recording = MeetingAudio.recordingURL(meeting)
+                NSWorkspace.shared.activateFileViewerSelecting(
+                    [FileManager.default.fileExists(atPath: recording.path) ? recording : meeting.folder])
             })
             items.append(.init(title: "Delete", icon: "trash", destructive: true) { confirmDelete = true })
         }

@@ -39,10 +39,26 @@ public struct TextCleaner {
         return normalized.isEmpty || hallucinations.contains(normalized)
     }
 
-    static let hallucinations: Set<String> = [
+    static let hallucinations: Set<String> = Set([
         "you", "thank you", "thanks", "thank you very much", "thanks for watching",
         "thank you for watching", "bye", "okay", "so", "subtitles by the amaraorg community",
+    ]).union(TextCleaner.videoOutros)
+
+    /// Video-ending lines Whisper writes over silence in Japanese, Chinese and Korean ("thanks for watching",
+    /// "please subscribe", subtitle credits). Nobody says these in a meeting, so they're dropped at any length.
+    public static let videoOutros: Set<String> = [
+        "ご視聴ありがとうございました", "ご視聴ありがとうございます", "最後までご視聴いただきありがとうございました",
+        "チャンネル登録よろしくお願いします", "チャンネル登録お願いします", "おやすみなさい",
+        "字幕視聴ありがとうございました", "謝謝觀看", "谢谢观看", "感谢观看", "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
+        "字幕由amaraorg社区提供", "시청해주셔서 감사합니다", "시청해 주셔서 감사합니다", "구독과 좋아요 부탁드립니다",
     ]
+
+    /// Whether the text is one of the video outros (see `videoOutros`).
+    public static func isVideoOutro(_ text: String) -> Bool {
+        let normalized = text.lowercased().filter { !$0.isPunctuation && !$0.isWhitespace || $0 == " " }
+            .trimmingCharacters(in: .whitespaces)
+        return videoOutros.contains(normalized) || videoOutros.contains(normalized.replacingOccurrences(of: " ", with: ""))
+    }
 
     // MARK: - Steps
 

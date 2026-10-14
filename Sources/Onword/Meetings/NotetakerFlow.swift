@@ -120,6 +120,10 @@ final class NotetakerFlow {
                 }
             }
         }
+        // ONWORD_TEST_REPROCESS=1 transcribes every meeting again (e.g. from recording.m4a).
+        if env["ONWORD_TEST_REPROCESS"] != nil {
+            for meeting in MeetingStore.shared.meetings where meeting.status == .ready { MeetingRecorder.shared.process(meeting.id) }
+        }
         guard let island = env["ONWORD_TEST_ISLAND"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             let next = CalendarService.shared.upcoming.first

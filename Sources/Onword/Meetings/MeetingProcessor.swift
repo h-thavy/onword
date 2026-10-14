@@ -54,8 +54,7 @@ actor MeetingProcessor {
     private func transcribe(micURL: URL, systemURL: URL, model: Transcriber.Model, fallback: Transcriber.Model?,
                             language: String?, replacements: [String: String],
                             progress: @Sendable (String) async -> Void) async throws -> [TranscriptSegment] {
-        let mic = (try? AudioFileWriter.read(micURL)) ?? []
-        let system = (try? AudioFileWriter.read(systemURL)) ?? []
+        let (mic, system) = MeetingAudio.load(micURL: micURL, systemURL: systemURL)
         let micHasSpeech = Resampler.rms(mic) >= silenceRMS
         let systemHasSpeech = Resampler.rms(system) >= silenceRMS
         let micSeconds = mic.count / 16_000, systemSeconds = system.count / 16_000
@@ -73,22 +72,29 @@ actor MeetingProcessor {
 
         // Each side in the language it's mostly spoken in, from your languages (you might speak Khmer while
         // the call is in English).
-        let systemLanguage = language == nil ? await transcriber.detectLanguage(system, among: yourLanguages, windows: 3) : language
-        let micLanguage = language == nil ? await transcriber.detectLanguage(mic, among: yourLanguages, windows: 3) : language
+        let forced = ProcessInfo.processInfo.environment["ONWORD_MEETING_LANGUAGE"]   // test hook
+        var systemLanguage = language, micLanguage = language
+        if let forced {
+            systemLanguage = forced
+            micLanguage = forced
+        } else if language == nil {
+            systemLanguage = await transcriber.detectLanguage(system, among: yourLanguages, windows: 3)
+            micLanguage = await transcriber.detectLanguage(mic, among: yourLanguages, windows: 3)
+        }
         if language == nil, !yourLanguages.isEmpty {
             log.notice("Languages: mic \(micLanguage ?? "auto", privacy: .public), call \(systemLanguage ?? "auto", privacy: .public)")
         }
 
         if systemHasSpeech {
             await progress("Transcribing the other speakers…")
-            let others = withoutHallucinations(try await transcriber.transcribeLong(system, language: systemLanguage))
+            let others = withoutHallucinations(try await transcriber.transcribeLong(system, language: systemLanguage), seconds: Double(system.count) / 16_000)
             await progress("Identifying speakers…")
             let tagged = try await diarize(system, transcription: others)
 
             var mine: [TranscriptSegment] = []
             if micHasSpeech {
                 await progress("Transcribing your microphone…")
-                mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage)), speaker: "me")
+                mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage), seconds: Double(mic.count) / 16_000), speaker: "me")
                 let before = mine.count
                 // The call leaking from the speakers: a faint copy of the call audio, or mostly the same words.
                 mine = mine.filter { !EchoDetector.isEcho(mic: mic, system: system, start: $0.start, end: $0.end) }
@@ -103,7 +109,7 @@ actor MeetingProcessor {
         guard micHasSpeech else { return [] }
         // In-person meeting: everyone is on the microphone, so diarize that.
         await progress("Transcribing…")
-        let all = withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage))
+        let all = withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage), seconds: Double(mic.count) / 16_000)
         await progress("Identifying speakers…")
         return applyDictionary(TranscriptMerger.merge([try await diarize(mic, transcription: all)]), replacements)
     }
@@ -116,7 +122,7 @@ actor MeetingProcessor {
             NSSpellChecker.shared.checkSpelling(of: word, startingAt: 0).location == NSNotFound
         }
         return segments
-            .map { var s = $0; s.text = corrector.correct(cleaner.clean(ScriptFilter.clean(s.text, languages: yourLanguages))); return s }
+            .map { var s = $0; s.text = TranscriptMerger.tidySpacing(corrector.correct(cleaner.clean(ScriptFilter.clean(s.text, languages: yourLanguages)))); return s }
             .filter { !$0.text.isEmpty }
     }
 
@@ -147,7 +153,9 @@ actor MeetingProcessor {
 
     /// Removes Whisper's stock silence outputs ("you", "Thank you.") at the raw-segment level, before
     /// speaker alignment can glue them onto a real sentence.
-    private func withoutHallucinations(_ results: [TranscriptionResult]) -> [TranscriptionResult] {
+    private func withoutHallucinations(_ results: [TranscriptionResult], seconds: Double? = nil) -> [TranscriptionResult] {
+        // Nothing can be said after the recording ends (Whisper sometimes stamps a filler line there).
+        if let seconds { for result in results { result.segments.removeAll { Double($0.start) >= seconds } } }
         // Debug aid: ONWORD_DEBUG_MEETING=1 logs every raw segment with its confidence.
         if ProcessInfo.processInfo.environment["ONWORD_DEBUG_MEETING"] != nil {
             for segment in results.flatMap(\.segments) {

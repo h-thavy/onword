@@ -102,7 +102,7 @@ final class LiveTranscriber {
         var batch = TranscriptMerger.dropHallucinations(new)
             .map { segment -> TranscriptSegment in
                 var s = segment
-                s.text = cleaner.clean(ScriptFilter.clean(s.text, languages: languages))
+                s.text = TranscriptMerger.tidySpacing(cleaner.clean(ScriptFilter.clean(s.text, languages: languages)))
                 if s.speaker == "them" { s.speaker = speakerAt?((s.start + s.end) / 2) ?? "Them" } else { s.speaker = "You" }
                 return s
             }

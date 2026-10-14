@@ -35,7 +35,7 @@ public enum TranscriptMerger {
         for segment in sorted {
             if var last = merged.last, last.speaker == segment.speaker, segment.start - last.end <= joinGap {
                 last.end = max(last.end, segment.end)
-                last.text += " " + segment.text
+                last.text = Self.join(last.text, segment.text)
                 merged[merged.count - 1] = last
             } else {
                 merged.append(segment)
@@ -64,6 +64,35 @@ public enum TranscriptMerger {
 
     private static func stem(_ word: String) -> String { String(word.prefix(5)) }
 
+    /// Joins two pieces of a turn: with a space, except between scripts written without spaces
+    /// (Japanese, Chinese, Thai, Khmer…), where a space would be wrong.
+    public static func join(_ a: String, _ b: String) -> String {
+        let left = a.trimmingCharacters(in: .whitespaces), right = b.trimmingCharacters(in: .whitespaces)
+        guard let last = left.unicodeScalars.last, let first = right.unicodeScalars.first else { return left + right }
+        return unspaced(last) || unspaced(first) ? left + right : left + " " + right
+    }
+
+    /// Removes spaces next to Japanese, Chinese, Thai or Khmer characters ("皆さん、 おはよう" → "皆さん、おはよう").
+    public static func tidySpacing(_ text: String) -> String {
+        let chars = Array(text.unicodeScalars)
+        var out = String.UnicodeScalarView()
+        for (i, c) in chars.enumerated() {
+            if c == " ", let prev = out.last, i + 1 < chars.count, unspaced(prev) || unspaced(chars[i + 1]) {
+                // Keep a space between two Latin words even when a CJK character came earlier.
+                if !(unspaced(prev) || unspaced(chars[i + 1])) { out.append(c) }
+                continue
+            }
+            out.append(c)
+        }
+        return String(out)
+    }
+
+    static func unspaced(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        return (0x3000...0x30FF).contains(v) || (0x3400...0x9FFF).contains(v) || (0xFF00...0xFFEF).contains(v)
+            || (0x0E00...0x0EFF).contains(v) || (0x1780...0x17FF).contains(v) || (0x1000...0x109F).contains(v)
+    }
+
     /// "Same person": moves every segment of `from` to `to` and re-joins adjacent turns.
     public static func reassign(_ segments: [TranscriptSegment], from: String, to: String) -> [TranscriptSegment] {
         merge([segments.map { var s = $0; if s.speaker == from { s.speaker = to }; return s }])
@@ -71,7 +100,9 @@ public enum TranscriptMerger {
 
     /// Drops Whisper's stock outputs for silence ("you", "Thank you.") when they are short and isolated.
     public static func dropHallucinations(_ segments: [TranscriptSegment], maxDuration: Double = 1.5) -> [TranscriptSegment] {
-        segments.filter { !($0.end - $0.start <= maxDuration && TextCleaner.isLikelyHallucination($0.text)) }
+        segments.filter {
+            !($0.end - $0.start <= maxDuration && TextCleaner.isLikelyHallucination($0.text)) && !TextCleaner.isVideoOutro($0.text)
+        }
     }
 
     static func words(_ text: String) -> [String] {

@@ -57,7 +57,9 @@ final class MeetingRecorder: ObservableObject {
         if let existing, let found = MeetingStore.shared.meeting(existing) {
             meeting = found
             if found.status != .draft {
-                // Resume: the clock and the speaker timeline continue where the last part ended.
+                // Resume: the clock and the speaker timeline continue where the last part ended. A finished
+                // meeting's audio was compressed; put its tracks back so the new part can be appended.
+                MeetingAudio.restoreTracks(found)
                 resumingDuration = found.duration
                 startedAt = Date().addingTimeInterval(-found.duration)
                 meeting.resumedCount = (found.resumedCount ?? 0) + 1
@@ -251,7 +253,10 @@ final class MeetingRecorder: ObservableObject {
             do {
                 let (segments, names) = try await MeetingProcessor.shared.process(
                     micURL: meeting.micURL, systemURL: meeting.systemURL, speakersURL: meeting.speakersURL,
-                    model: model, fallback: fallback, language: language, languages: controller.selectedLanguages,
+                    model: model, fallback: fallback, language: language,
+                    // Test hook: ONWORD_TEST_LANGUAGES=en,ja stands in for the languages picked in Settings.
+                    languages: ProcessInfo.processInfo.environment["ONWORD_TEST_LANGUAGES"].map { $0.split(separator: ",").map(String.init) }
+                        ?? controller.selectedLanguages,
                     replacements: replacements,
                     otherPeople: (meeting.attendees?.count).flatMap { $0 > 0 ? $0 : nil }, names: names
                 ) { message in
@@ -300,6 +305,10 @@ final class MeetingRecorder: ObservableObject {
                     MeetingStore.shared.update(id) { $0.summaryDeferred = true }
                 } else {
                     MeetingSummarizer.shared.summarize(id)
+                }
+                // Compress the two raw tracks into recording.m4a (you left, the call right).
+                if let done = MeetingStore.shared.meeting(id), done.status == .ready {
+                    Task.detached(priority: .utility) { MeetingAudio.compress(done) }
                 }
                 // Free the meeting model's memory until the next meeting (dictation keeps its own).
                 if !isRecording { await MeetingProcessor.transcriber.unload() }

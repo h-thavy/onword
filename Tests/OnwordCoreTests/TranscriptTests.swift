@@ -105,6 +105,19 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(ScriptFilter.clean("Xin chào, ça va? Ngày mai", languages: ["vi"]), "Xin chào, ça va? Ngày mai")
     }
 
+    func testJoinSkipsSpacesBetweenUnspacedScripts() {
+        XCTAssertEqual(TranscriptMerger.join("皆さん、", "おはようございます。"), "皆さん、おはようございます。")
+        XCTAssertEqual(TranscriptMerger.join("Hello.", "How are you?"), "Hello. How are you?")
+        XCTAssertEqual(TranscriptMerger.join("ជួបគ្នា", "ថ្ងៃស្អែក។"), "ជួបគ្នាថ្ងៃស្អែក។")
+        XCTAssertEqual(TranscriptMerger.tidySpacing("皆さん、 おはようございます。 今日は Onword の話"), "皆さん、おはようございます。今日はOnwordの話")
+        XCTAssertEqual(TranscriptMerger.tidySpacing("Hello there, friend"), "Hello there, friend")
+    }
+
+    func testDropsVideoOutrosAtAnyLength() {
+        let segments = [seg(0, 4, "s1", "金曜日までに共有してください。"), seg(60, 66, "s1", "ご視聴ありがとうございました")]
+        XCTAssertEqual(TranscriptMerger.dropHallucinations(segments).map(\.text), ["金曜日までに共有してください。"])
+    }
+
     func testRemoveEchoMatchesGarbledWords() {
         let others = [seg(36, 40, "s2", "Could we move the analytics dashboard to next sprint, then?")]
         let me = [seg(36, 39, "me", "Did we need the analytic dashboard to make it print, then?")]

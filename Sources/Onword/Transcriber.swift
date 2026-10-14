@@ -1,4 +1,5 @@
 import Foundation
+import OnwordCore
 import os
 import WhisperKit
 
@@ -196,7 +197,7 @@ actor Transcriber {
         }
 
         let results = try await kit.transcribe(audioArray: samples, decodeOptions: options)
-        return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return TranscriptMerger.tidySpacing(results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Long-form transcription for meetings: keeps segment and word timestamps so speakers can be attached.

@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MeetingDetector.shared.start()
             CalendarService.shared.start()
             NotetakerFlow.shared.runTestHooks()
+            MeetingAudio.compressOldRecordings()
             if let folder = ProcessInfo.processInfo.environment["ONWORD_TEST_MEETING"] {
                 MeetingRecorder.shared.importForTesting(from: URL(fileURLWithPath: folder))
                 WindowManager.shared.show(.notetaker)
