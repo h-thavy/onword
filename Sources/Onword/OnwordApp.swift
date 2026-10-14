@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DockIcon.apply()
             History.prune()
             DictationController.shared.start()
+            FlowBar.shared.start()
             if !Onboarding.isComplete || Onboarding.debugStep != nil {
                 WindowManager.shared.showOnboarding()   // asks for permissions step by step
             } else if !Permissions.allGranted {

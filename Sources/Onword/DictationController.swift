@@ -194,7 +194,8 @@ final class DictationController: ObservableObject {
     private let recorder = AudioRecorder()
     private let transcriber = Transcriber()
     private var gesture = HotkeyGesture()
-    private lazy var panel = StatusPanel(controller: self)
+    // Dictation feedback is drawn by the Flow Bar (FlowBar.shared), which follows `state`, `isHandsFree`
+    // and `level` on its own.
     private var context = TextContext()
     private var recordingStartedAt = Date()
     private var levelTimer: Timer?
@@ -448,13 +449,14 @@ final class DictationController: ObservableObject {
         if state == .needsPermissions { refreshPermissions() }
         guard state == .idle else {
             gesture.cancel()
-            if state == .needsPermissions { NSSound.beep() }
+            if state == .needsPermissions { NSSound.beep(); FlowBar.shared.flashError() }
             return
         }
         context = AX.readContext()
         if context.isSecureField {
             gesture.cancel()
             NSSound.beep()
+            FlowBar.shared.flashError()
             return
         }
         do {
@@ -467,7 +469,6 @@ final class DictationController: ObservableObject {
         recordingStartedAt = Date()
         isHandsFree = false
         state = .recording
-        panel.show()
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -480,7 +481,28 @@ final class DictationController: ObservableObject {
         }
     }
 
-    /// Esc, or anything else that aborts dictation outright.
+    // MARK: - Flow Bar buttons
+
+    /// The Flow Bar's mic button: starts a hands-free dictation (into the frontmost app, read exactly as a key
+    /// press would; the bar never activates Onword), or finishes the dictation that's running.
+    func toggleHandsFree() {
+        if state == .recording {
+            finishDictation()
+            return
+        }
+        guard !hotkeyTestMode, gesture.startHandsFree() else { return }
+        beginRecording()
+        if state == .recording { isHandsFree = true }
+    }
+
+    /// The Flow Bar's ✓: transcribes and inserts now.
+    func finishDictation() {
+        guard state == .recording else { return }
+        gesture.cancel()
+        finishRecording()
+    }
+
+    /// Esc, the Flow Bar's ✕, or anything else that aborts dictation outright.
     func cancel() {
         gesture.cancel()
         discardRecording()
@@ -490,7 +512,6 @@ final class DictationController: ObservableObject {
         guard state == .recording else { return }
         _ = stopRecording()
         state = .idle
-        panel.hide()
     }
 
     private func stopRecording() -> [Float] {
@@ -511,7 +532,6 @@ final class DictationController: ObservableObject {
             log.notice("Skipped: \(seconds, format: .fixed(precision: 2)) s, too short or silent")
             if seconds >= minimumSeconds { lastHeardNothing = Date() }
             state = .idle
-            panel.hide()
             return
         }
 
@@ -523,10 +543,7 @@ final class DictationController: ObservableObject {
 
         Task {
             let started = Date()
-            defer {
-                state = .idle
-                panel.hide()
-            }
+            defer { state = .idle }
             do {
                 let raw = try await transcriber.transcribe(samples, language: language, prompt: dictionary.whisperPrompt())
                 if seconds < 3, TextCleaner.isLikelyHallucination(raw) { lastHeardNothing = Date(); return }
@@ -558,6 +575,7 @@ final class DictationController: ObservableObject {
             } catch {
                 log.error("Transcription failed: \(error.localizedDescription)")
                 NSSound.beep()
+                FlowBar.shared.flashError()
             }
         }
     }
