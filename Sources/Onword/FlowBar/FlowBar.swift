@@ -126,6 +126,10 @@ final class FlowBar {
             let modes: [String: FlowBarModel.Mode] = ["ready": .ready, "listening": .listening, "handsFree": .handsFree,
                                                       "processing": .processing, "error": .error, "meeting": .meeting]
             if let mode = modes[forced] { forcedMode = mode; update() }
+            // ONWORD_TEST_FLOWBAR_DRAWER=1 opens the upcoming-meetings drawer.
+            if ProcessInfo.processInfo.environment["ONWORD_TEST_FLOWBAR_DRAWER"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { FlowBar.shared.toggleDrawer() }
+            }
             // ONWORD_TEST_FLOWBAR_TIP=mic|record|cancel|finish shows that tooltip too.
             let tips: [String: FlowBarModel.Target] = ["mic": .mic, "record": .record, "cancel": .cancel, "finish": .finish]
             if let tip = ProcessInfo.processInfo.environment["ONWORD_TEST_FLOWBAR_TIP"].flatMap({ tips[$0] }) {
@@ -190,7 +194,7 @@ final class FlowBar {
         default: break
         }
         if MeetingRecorder.shared.isRecording { return .meeting }
-        if !model.concealed && (hovered || model.menuOpen) { return .ready }
+        if !model.concealed && (hovered || model.menuOpen || model.drawerOpen) { return .ready }
         return .rest
     }
 
@@ -311,8 +315,10 @@ final class FlowBar {
             runs = [Run(text: "Dictate "), Run(text: key, bold: true)]
         case (.mic, .handsFree):
             runs = [Run(text: "Press "), Run(text: key, bold: true), Run(text: " to finish and paste")]
+        case (.meetings, _):
+            runs = [Run(text: model.drawerOpen ? "Hide upcoming meetings" : "Upcoming meetings")]
         case (.record, _):
-            runs = [Run(text: "Start Notetaker "), Run(text: "Ctrl+Opt+M", bold: true)]
+            runs = [Run(text: "Start Notetaker "), Run(text: "Opt+M", bold: true)]
         case (.cancel, _):
             runs = [Run(text: "Cancel")]
         case (.finish, _):
@@ -338,7 +344,10 @@ final class FlowBar {
             if model.mode == .listening { return }
             DictationController.shared.toggleHandsFree()
         case .record:
+            closeDrawer()
             MeetingRecorder.shared.start()
+        case .meetings:
+            toggleDrawer()
         case .cancel:
             DictationController.shared.cancel()
         case .finish:
@@ -348,6 +357,36 @@ final class FlowBar {
         case .meetingStop:
             MeetingRecorder.shared.stop()
         }
+    }
+
+    /// Opens or closes the upcoming-meetings drawer above the bar.
+    func toggleDrawer() {
+        FlowBarDrawer.shared.isOpen ? closeDrawer() : openDrawer()
+    }
+
+    private func openDrawer() {
+        guard let panel else { return }
+        let layout = model.layout
+        let anchor = layout.caret ?? layout.pill
+        // Canvas is top-left based; the drawer sits 8 pt above the bar.
+        let centerX = panel.frame.minX + anchor.midX
+        // 8 pt above the bar, less the drawer's 20 pt transparent shadow margin.
+        let bottom = panel.frame.maxY - layout.pill.minY + 8 - 20
+        FlowBarDrawer.shared.onClose = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.model.drawerOpen = false
+                self?.update()
+            }
+        }
+        model.drawerOpen = true
+        setHover(nil)
+        update()
+        FlowBarDrawer.shared.show(centerX: centerX, bottom: bottom, on: panel.screen)
+    }
+
+    func closeDrawer() {
+        FlowBarDrawer.shared.close()
+        model.drawerOpen = false
     }
 
     fileprivate func rightClick(at point: CGPoint, in view: NSView) {

@@ -89,12 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             ScratchpadWindow.shared.runTestHookIfRequested()   // ONWORD_TEST_SCRATCHPAD
 
-            // ⌃⌥S Scratchpad, ⌃⌥M meeting recording. (⌃ avoids clashing with other dictation apps'
-            // ⌥S / ⌥M shortcuts.)
+            // ⌃⌥S Scratchpad (⌃ avoids clashing with other dictation apps' ⌥S), ⌥M meeting recording
+            // (Wispr Flow's Notetaker shortcut).
             GlobalShortcuts.shared.register(keyCode: kVK_ANSI_S, modifiers: controlKey | optionKey) {
                 MainActor.assumeIsolated { ScratchpadWindow.shared.toggle() }
             }
-            GlobalShortcuts.shared.register(keyCode: kVK_ANSI_M, modifiers: controlKey | optionKey) {
+            GlobalShortcuts.shared.register(keyCode: kVK_ANSI_M, modifiers: optionKey) {
                 MainActor.assumeIsolated {
                     MeetingRecorder.shared.toggle()
                     WindowManager.shared.show(.notetaker)
@@ -132,7 +132,7 @@ private struct MenuContent: View {
             meetings.toggle()
             WindowManager.shared.show(.notetaker)
         }
-        .keyboardShortcut("m", modifiers: [.control, .option])
+        .keyboardShortcut("m", modifiers: [.option])
         Button("Scratchpad") { ScratchpadWindow.shared.show() }
             .keyboardShortcut("s", modifiers: [.control, .option])
         Button("Copy last transcript") { controller.copyLastText() }

@@ -23,10 +23,17 @@ struct FlowBarView: View {
                     pill(layout)
                         .background(alignment: .trailing) {
                             if layout.record != nil {
-                                recordButton
-                                    .frame(width: 30, height: 30)
-                                    .offset(x: 32)   // 2 pt to the right of the mic pill
-                                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                                // The Notetaker button over its caret pill, which widens to show the
+                                // upcoming-meetings chevron.
+                                ZStack(alignment: .leading) {
+                                    caretPill(open: layout.caretOpen)
+                                    recordButton.frame(width: 30, height: 30)
+                                }
+                                .frame(width: 54, height: 30, alignment: .leading)
+                                .offset(x: 56)   // the button starts 2 pt to the right of the mic pill
+                                .transition(.scale(scale: 0.5).combined(with: .opacity))
+                                .animation(model.reduceMotion ? nil : .timingCurve(0.05, 0.6, 0.4, 0.95, duration: 0.1),
+                                           value: layout.caretOpen)
                             }
                         }
                         .padding(.bottom, FlowBarLayout.bottomInset)
@@ -142,6 +149,21 @@ struct FlowBarView: View {
             Circle().fill(Theme.recording.opacity(hovered ? 1 : 0.85))
             RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 7, height: 7)
         }
+    }
+
+    /// #1A1A1A pill behind the Notetaker button; open, it's 54 pt wide with a chevron-up at the right.
+    private func caretPill(open: Bool) -> some View {
+        Capsule().fill(Color(red: 0x1A / 255, green: 0x1A / 255, blue: 0x1A / 255))
+            .frame(width: open ? 54 : 30, height: 30)
+            .overlay(alignment: .trailing) {
+                if open {
+                    Image(systemName: model.drawerOpen ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(model.hover == .meetings || model.drawerOpen
+                                         ? Color.white : Color(red: 0x87 / 255, green: 0x86 / 255, blue: 0x83 / 255))
+                        .frame(width: 24)
+                }
+            }
     }
 
     private var recordButton: some View {

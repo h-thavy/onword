@@ -47,7 +47,7 @@ A small bar sits above the Dock (or near the bottom of the screen when the Dock 
 ### Insights
 Words per minute (and how that compares with typing speeds), fixes Onword made, total words, which kinds of apps you dictate into, and a day-streak heatmap — all worked out on your Mac from your history. The *Your voice* tab adds your most used and most corrected words and your peak dictation time.
 
-### Notetaker (⌃⌥M)
+### Notetaker (⌥M)
 Records calls **without a bot joining**: your microphone and your Mac's audio output are recorded as two separate tracks.
 - **Call detection:** Onword can notice a call (Zoom, Teams, FaceTime, Webex, Discord, or Google Meet / Teams / Slack huddles in a browser) and ask whether to record. It stops when the call ends.
 - **Live transcript** while you talk.

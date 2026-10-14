@@ -730,7 +730,7 @@ private struct DoneStep: View {
                 Divider().overlay(OB.sand)
                 tip(AnyView(chip("⌃⌥S")), "Open the Scratchpad for quick notes.")
                 Divider().overlay(OB.sand)
-                tip(AnyView(chip("⌃⌥M")), "Start or stop Notetaker in a call. Onword can also notice calls and ask.")
+                tip(AnyView(chip("⌥M")), "Start or stop Notetaker in a call. Onword can also notice calls and ask.")
             }
         } footer: {
             FooterButton(title: "Open Onword") {

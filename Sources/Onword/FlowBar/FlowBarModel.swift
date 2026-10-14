@@ -23,7 +23,7 @@ final class FlowBarModel: ObservableObject {
 
     /// The parts of the bar that react to the pointer.
     enum Target: Hashable {
-        case mic, record, cancel, finish, meetingNote, meetingStop
+        case mic, record, meetings, cancel, finish, meetingNote, meetingStop
     }
 
     /// A tooltip above `target`: runs of plain and bold text.
@@ -45,6 +45,8 @@ final class FlowBarModel: ObservableObject {
     @Published var tooltip: Tooltip?
     /// The bar's own context menu is open, which keeps it expanded.
     @Published var menuOpen = false
+    /// The upcoming-meetings drawer is open (keeps the bar expanded and the caret pill wide).
+    @Published var drawerOpen = false
 
     let dictationMeter = LevelMeter(gain: 5) { DictationController.shared.level }
     let meetingMeter = LevelMeter(gain: 2) {
@@ -52,7 +54,9 @@ final class FlowBarModel: ObservableObject {
     }
     var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
-    var layout: FlowBarLayout { FlowBarLayout(mode: mode) }
+    var layout: FlowBarLayout {
+        FlowBarLayout(mode: mode, caretOpen: drawerOpen || hover == .record || hover == .meetings)
+    }
 }
 
 /// Where everything sits inside the bar's transparent canvas (top-left origin, points). The pill's bottom
@@ -68,6 +72,20 @@ struct FlowBarLayout {
     static let expandedSlack: CGFloat = 12
 
     let mode: FlowBarModel.Mode
+    /// The caret pill behind the Notetaker button is widened to show the meetings chevron.
+    var caretOpen = false
+
+    /// Behind the Notetaker button: 30 pt wide, widening to 54 pt to reveal a chevron (Wispr's caret pill).
+    var caret: CGRect? {
+        guard let record else { return nil }
+        return CGRect(x: record.minX, y: record.minY, width: caretOpen ? 54 : 30, height: 30)
+    }
+
+    /// The chevron that opens the upcoming-meetings drawer (only while the caret pill is wide).
+    var meetingsChevron: CGRect? {
+        guard caretOpen, let record else { return nil }
+        return CGRect(x: record.maxX, y: record.minY, width: 24, height: 30)
+    }
 
     var pillSize: CGSize {
         switch mode {
@@ -120,12 +138,14 @@ struct FlowBarLayout {
     func hotRect(expanded: Bool) -> CGRect {
         var rect = pill
         if let record { rect = rect.union(record) }
+        if let caret { rect = rect.union(caret) }
         rect = rect.insetBy(dx: -Self.hotPadding.width, dy: -Self.hotPadding.height)
         return expanded ? rect.insetBy(dx: -Self.expandedSlack, dy: -Self.expandedSlack) : rect
     }
 
     /// The clickable element at `point`, if any.
     func target(at point: CGPoint) -> FlowBarModel.Target? {
+        if let meetingsChevron, meetingsChevron.contains(point) { return .meetings }
         if let record, record.contains(point) { return .record }
         if let cancel, cancel.contains(point) { return .cancel }
         if let finish, finish.contains(point) { return .finish }
@@ -143,6 +163,7 @@ struct FlowBarLayout {
     func anchor(for target: FlowBarModel.Target) -> (rect: CGRect, offset: CGFloat) {
         switch target {
         case .record: (record ?? pill, 4)
+        case .meetings: (meetingsChevron ?? record ?? pill, 4)
         case .cancel: (cancel ?? pill, 10)
         case .finish: (finish ?? pill, 10)
         case .meetingStop: (meetingStop ?? pill, 10)

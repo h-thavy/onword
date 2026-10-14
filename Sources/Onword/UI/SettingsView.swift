@@ -291,7 +291,7 @@ struct SettingsView: View {
                     }
                 }
                 SettingsLine("Start or stop Notetaker", "From any app.", last: true) {
-                    KeyChip(text: "⌃⌥M")
+                    KeyChip(text: "⌥M")
                 }
             }
             SettingsSection(title: "Notes") {
