@@ -22,6 +22,10 @@ final class DictationController: ObservableObject {
     @Published private(set) var lastText: String?
     /// When the dictation shortcut was last pressed (setup shows "✓ Detected").
     @Published private(set) var lastHotkeyPress: Date?
+    /// True while the dictation shortcut is physically held down (setup's key animation).
+    @Published private(set) var hotkeyIsDown = false
+    /// Setup's shortcut test: the key only animates on screen and doesn't start a dictation.
+    var hotkeyTestMode = false
     /// When a too-short tap was ignored (setup reminds you to hold the key down).
     @Published private(set) var lastQuickTap: Date?
     /// When the last hands-free dictation finished (setup's hands-free practice).
@@ -94,10 +98,16 @@ final class DictationController: ObservableObject {
         AppPaths.ensureDictionary()
         hotkeyMonitor.key = hotkey
         hotkeyMonitor.onPress = { [weak self] in
-            self?.lastHotkeyPress = Date()
-            self?.handle(self?.gesture.press())
+            guard let self else { return }
+            self.lastHotkeyPress = Date()
+            self.hotkeyIsDown = true
+            if !self.hotkeyTestMode { self.handle(self.gesture.press()) }
         }
-        hotkeyMonitor.onRelease = { [weak self] in self?.handle(self?.gesture.release()) }
+        hotkeyMonitor.onRelease = { [weak self] in
+            guard let self else { return }
+            self.hotkeyIsDown = false
+            if !self.hotkeyTestMode { self.handle(self.gesture.release()) }
+        }
         hotkeyMonitor.onEscape = { [weak self] in self?.cancel() }
         refreshPermissions()
         loadModel()

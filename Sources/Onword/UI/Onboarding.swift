@@ -4,6 +4,10 @@ import SwiftUI
 
 /// First-run setup: welcome → permissions → microphone test → shortcut → practice dictation → done.
 enum Onboarding {
+    /// Developer option: `ONWORD_ONBOARDING_STEP=hotkey` (or `hotkey-pressed`, `holdToTalk`, …) opens setup
+    /// at that step on launch, e.g. to check a screen without clicking through.
+    static let debugStep = ProcessInfo.processInfo.environment["ONWORD_ONBOARDING_STEP"]
+
     static var isComplete: Bool {
         get { UserDefaults.standard.bool(forKey: "onboardingComplete") }
         set { UserDefaults.standard.set(newValue, forKey: "onboardingComplete") }
@@ -12,10 +16,11 @@ enum Onboarding {
 
 struct OnboardingView: View {
     enum Step: Int, CaseIterable {
-        case welcome, permissions, holdToTalk, handsFree, done
+        case welcome, permissions, hotkey, holdToTalk, handsFree, done
     }
 
-    @State private var step: Step = .welcome
+    @State private var step: Step = Onboarding.debugStep
+        .flatMap { name in Step.allCases.first { "\($0)" == name.replacingOccurrences(of: "-pressed", with: "") } } ?? .welcome
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +30,7 @@ struct OnboardingView: View {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
                 case .permissions: PermissionsStep(next: next)
+                case .hotkey: HotkeyStep(next: next)
                 case .holdToTalk: HoldToTalkStep(next: next)
                 case .handsFree: HandsFreeStep(next: next)
                 case .done: DoneStep()

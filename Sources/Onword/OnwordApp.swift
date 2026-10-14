@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             DictationController.shared.start()
-            if !Onboarding.isComplete {
+            if !Onboarding.isComplete || Onboarding.debugStep != nil {
                 WindowManager.shared.showOnboarding()   // asks for permissions step by step
             } else if !Permissions.allGranted {
                 DictationController.shared.requestPermissions()
