@@ -139,6 +139,8 @@ struct Monogram: View {
     let name: String
     var size: CGFloat
     var radius: CGFloat = 0
+    /// Half-width tiles only fit one letter.
+    var oneLetter = false
 
     var body: some View {
         Rectangle().fill(Color(hex: tint))
@@ -150,7 +152,7 @@ struct Monogram: View {
         let parts: [Substring] = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" })
         var result = ""
         if let first = parts.first?.first { result.append(first) } else { result = "?" }
-        if parts.count > 1, let second = parts[1].first { result.append(second) }
+        if !oneLetter, parts.count > 1, let second = parts[1].first { result.append(second) }
         return result.uppercased()
     }
 
@@ -188,13 +190,12 @@ struct Facepile: View {
             Monogram(name: names[0], size: size)
         case 2:
             HStack(spacing: gap) {
-                Monogram(name: names[0], size: size).frame(width: half)
-                Monogram(name: names[1], size: size).frame(width: half)
+                Monogram(name: names[0], size: size, oneLetter: true).frame(width: half).clipped()
+                Monogram(name: names[1], size: size, oneLetter: true).frame(width: half).clipped()
             }
-            .clipped()
         case 3:
             HStack(spacing: gap) {
-                Monogram(name: names[0], size: size).frame(width: half).clipped()
+                Monogram(name: names[0], size: size, oneLetter: true).frame(width: half).clipped()
                 VStack(spacing: gap) {
                     Monogram(name: names[1], size: half)
                     Monogram(name: names[2], size: half)

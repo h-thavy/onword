@@ -116,6 +116,7 @@ final class CalendarService: ObservableObject {
             let now = Date(), cal = Calendar.current
             func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
             let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now))!.addingTimeInterval(10 * 3600)
+            let later = cal.date(byAdding: .day, value: 3, to: cal.startOfDay(for: now))!.addingTimeInterval(15 * 3600)
             upcoming = [
                 UpcomingMeeting(id: "t1", title: "Design review", start: at(-10), end: at(20), attendees: ["Dara Sok", "Mina Park", "Leo Chan"],
                                 joinURL: URL(string: "https://meet.google.com/abc-defg-hij"), platform: .googleMeet, calendarColor: NSColor(srgbRed: 0.47, green: 0.53, blue: 0.80, alpha: 1)),
@@ -125,6 +126,8 @@ final class CalendarService: ObservableObject {
                                 joinURL: nil, platform: nil, calendarColor: NSColor(srgbRed: 0.20, green: 0.71, blue: 0.47, alpha: 1)),
                 UpcomingMeeting(id: "t4", title: "1:1 with Mina", start: tomorrow, end: tomorrow.addingTimeInterval(1800), attendees: ["Mina Park"],
                                 joinURL: URL(string: "https://meet.google.com/xyz-abcd-efg"), platform: .googleMeet, calendarColor: NSColor(srgbRed: 0.89, green: 0.49, blue: 0.45, alpha: 1)),
+                UpcomingMeeting(id: "t5", title: "Quarterly planning", start: later, end: later.addingTimeInterval(3600), attendees: ["Dara Sok", "Sam Lee"],
+                                joinURL: URL(string: "https://zoom.us/j/456"), platform: .zoom, calendarColor: NSColor(srgbRed: 0.56, green: 0.14, blue: 0.67, alpha: 1)),
             ]
             return
         }
@@ -134,11 +137,11 @@ final class CalendarService: ObservableObject {
             googleTask?.cancel()
             googleTask = Task {
                 let now = Date()
-                let until = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now))!
+                let until = Self.windowEnd(from: now)
                 do {
                     googleCalendars = try await GoogleCalendar.shared.calendarList()
-                    upcoming = try await GoogleCalendar.shared.meetings(from: now.addingTimeInterval(-3 * 3600), to: until,
-                                                                        hidden: hiddenCalendarIDs)
+                    upcoming = Self.windowed(try await GoogleCalendar.shared.meetings(from: now.addingTimeInterval(-3 * 3600), to: until,
+                                                                                      hidden: hiddenCalendarIDs), now: now)
                 } catch {
                     log.error("Google Calendar refresh failed: \(error.localizedDescription, privacy: .public)")
                 }
@@ -152,12 +155,32 @@ final class CalendarService: ObservableObject {
         guard !visible.isEmpty else { upcoming = []; return }
 
         let now = Date()
-        let until = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now))!
-        let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-3 * 3600), end: until, calendars: visible)
-        upcoming = store.events(matching: predicate)
+        let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-3 * 3600), end: Self.windowEnd(from: now),
+                                                 calendars: visible)
+        upcoming = Self.windowed(store.events(matching: predicate)
             .filter { !$0.isAllDay && $0.endDate > now && $0.status != .canceled && !declined($0) }
-            .compactMap(meeting)
-            .sorted { $0.start < $1.start }
+            .compactMap(meeting), now: now)
+    }
+
+    /// The end of the last day Onword looks at: today plus 6 days (a week, as in Wispr Flow).
+    private static func windowEnd(from now: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: now))!
+    }
+
+    /// Wispr Flow's upcoming list: meetings that haven't ended (and whose notes aren't finished), up to
+    /// 6 days ahead; when there are 20 or more, only up to the day of the 20th; at most 50.
+    private static func windowed(_ meetings: [UpcomingMeeting], now: Date) -> [UpcomingMeeting] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        let finished = Set(MeetingStore.shared.meetings
+            .filter { $0.status == .ready || $0.status == .processing || $0.status == .failed }
+            .compactMap(\.calendarEventID))
+        let sorted = meetings.filter { $0.end > now && !finished.contains($0.id) }.sorted { $0.start < $1.start }
+        func dayOffset(_ m: UpcomingMeeting) -> Int {
+            max(0, cal.dateComponents([.day], from: today, to: cal.startOfDay(for: m.start)).day ?? 0)
+        }
+        let lastDay = sorted.count < 20 ? 6 : min(max(1, dayOffset(sorted[19])), 6)
+        return Array(sorted.filter { dayOffset($0) <= lastDay }.prefix(50))
     }
 
     private func meeting(_ event: EKEvent) -> UpcomingMeeting? {

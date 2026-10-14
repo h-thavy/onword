@@ -298,7 +298,7 @@ private struct TodayCard: View {
     @Binding var preview: NotetakerPage.Preview?
     @ObservedObject private var calendar = CalendarService.shared
     @ObservedObject private var google = GoogleCalendar.shared
-    @State private var showAll = false
+    @State private var showAll = ProcessInfo.processInfo.environment["ONWORD_TEST_SHOWALL"] != nil   // test hook
     @State private var syncing = false
 
     private var groups: [(label: String, meetings: [UpcomingMeeting])] {
@@ -375,14 +375,22 @@ private struct TodayCard: View {
                 if !all.contains(where: { $0.label == "Today" }) {
                     Text("No meetings today").font(Theme.sans(16)).frame(maxWidth: .infinity).padding(16)
                 }
-                ForEach(shown, id: \.label) { group in
-                    if group.label != "Today" {
-                        Overline(text: group.label).padding(.init(top: 12, leading: 12, bottom: 4, trailing: 0))
-                    }
-                    ForEach(group.meetings) { meeting in
-                        UpcomingRowView(meeting: meeting, preview: $preview)
+                // Expanded, the week scrolls inside the card (up to about half the window).
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(shown, id: \.label) { group in
+                            if group.label != "Today" {
+                                Overline(text: group.label).padding(.init(top: 12, leading: 12, bottom: 4, trailing: 0))
+                            }
+                            ForEach(group.meetings) { meeting in
+                                UpcomingRowView(meeting: meeting, preview: $preview)
+                            }
+                        }
                     }
                 }
+                .scrollIndicators(.automatic)
+                .frame(maxHeight: showAll ? 420 : nil)
+                .fixedSize(horizontal: false, vertical: !showAll)
                 if all.reduce(0, { $0 + $1.meetings.count }) > 3 {
                     Button { showAll.toggle() } label: {
                         HStack(spacing: 4) {
