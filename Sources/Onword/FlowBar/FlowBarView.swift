@@ -220,14 +220,15 @@ private struct TooltipBubble: View {
     @State private var size: CGSize = .zero
 
     var body: some View {
+        // Wispr's tooltip: black capsule, 1 pt #30302F border, 15/20 regular, keys in bold white.
         text
-            .font(.system(size: 11))
+            .font(Theme.sans(15))
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color(white: 0.1)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.15)))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(.black).padding(1))   // inset inside the rim so the outline can't overhang
+            .background(Capsule().fill(Color(red: 0x30 / 255, green: 0x30 / 255, blue: 0x2F / 255)))
             .background(GeometryReader { proxy in
                 Color.clear.onAppear { size = proxy.size }.onChange(of: proxy.size) { _, new in size = new }
             })
@@ -243,7 +244,7 @@ private struct TooltipBubble: View {
 
     private var text: Text {
         tooltip.runs.reduce(Text("")) { result, run in
-            result + Text(run.text).fontWeight(run.bold ? .semibold : .regular).foregroundColor(run.color)
+            result + Text(run.text).fontWeight(run.bold ? .bold : .regular).foregroundColor(run.color)
         }
     }
 }

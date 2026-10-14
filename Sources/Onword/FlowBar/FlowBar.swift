@@ -20,7 +20,7 @@ final class FlowBar {
     /// How long the error flash lasts.
     private static let errorDuration: TimeInterval = 0.5
     /// How long the pointer rests on a button before its tooltip appears.
-    private static let tooltipDelay: TimeInterval = 0.35
+    private static let tooltipDelay: TimeInterval = 0.15
 
     let model = FlowBarModel()
 
@@ -126,10 +126,18 @@ final class FlowBar {
             let modes: [String: FlowBarModel.Mode] = ["ready": .ready, "listening": .listening, "handsFree": .handsFree,
                                                       "processing": .processing, "error": .error, "meeting": .meeting]
             if let mode = modes[forced] { forcedMode = mode; update() }
+            // ONWORD_TEST_FLOWBAR_TIP=mic|record|cancel|finish shows that tooltip too.
+            let tips: [String: FlowBarModel.Target] = ["mic": .mic, "record": .record, "cancel": .cancel, "finish": .finish]
+            if let tip = ProcessInfo.processInfo.environment["ONWORD_TEST_FLOWBAR_TIP"].flatMap({ tips[$0] }) {
+                forcedTip = tip
+                model.hover = tip
+                model.tooltip = tooltip(for: tip)
+            }
         }
     }
 
     private var forcedMode: FlowBarModel.Mode?
+    private var forcedTip: FlowBarModel.Target?
 
     /// Re-reads "Show Flow Bar at all times" and the "Hide for 1 hour" timer, then shows or hides the bar.
     func refreshVisibility() {
@@ -272,7 +280,7 @@ final class FlowBar {
     }
 
     private func setHover(_ target: FlowBarModel.Target?) {
-        guard model.hover != target else { return }
+        guard forcedTip == nil, model.hover != target else { return }
         model.hover = target
         tooltipTimer?.invalidate()
         tooltipTimer = nil
@@ -295,25 +303,24 @@ final class FlowBar {
 
     private func tooltip(for target: FlowBarModel.Target) -> FlowBarModel.Tooltip? {
         typealias Run = FlowBarModel.Tooltip.Run
-        let key = DictationController.shared.hotkey.title
+        // Wispr Flow's tooltip wording, with the shortcut as a bold key name ("Dictate fn").
+        let key = DictationController.shared.hotkey.tooltipName
         let runs: [Run]
         switch (target, model.mode) {
         case (.mic, .ready):
-            runs = [Run(text: "Click or hold "), Run(text: key, bold: true), Run(text: " to start dictating")]
-        case (.mic, .listening):
-            runs = [Run(text: "Release "), Run(text: key, bold: true), Run(text: " to paste")]
+            runs = [Run(text: "Dictate "), Run(text: key, bold: true)]
         case (.mic, .handsFree):
-            runs = [Run(text: "Press "), Run(text: key, bold: true), Run(text: " or click ✓ to paste")]
+            runs = [Run(text: "Press "), Run(text: key, bold: true), Run(text: " to finish and paste")]
         case (.record, _):
-            runs = [Run(text: "Start "), Run(text: "Notetaker", bold: true)]
+            runs = [Run(text: "Start Notetaker "), Run(text: "Ctrl+Opt+M", bold: true)]
         case (.cancel, _):
-            runs = [Run(text: "Cancel "), Run(text: "esc", bold: true, color: .white.opacity(0.6))]
+            runs = [Run(text: "Cancel")]
         case (.finish, _):
             runs = [Run(text: "Finish and paste")]
         case (.meetingNote, _):
-            runs = [Run(text: "Open "), Run(text: "Notetaker", bold: true)]
+            runs = [Run(text: "Show Notetaker")]
         case (.meetingStop, _):
-            runs = [Run(text: "Stop recording")]
+            runs = [Run(text: "Stop Notetaker")]
         default:
             return nil
         }
@@ -514,5 +521,16 @@ private final class FlowBarMenuTarget: NSObject {
 
     @objc func chooseMicrophone(_ sender: NSMenuItem) {
         if let uid = sender.representedObject as? String { DictationController.shared.microphoneUID = uid }
+    }
+}
+
+extension HotkeyMonitor.Key {
+    /// The key as Wispr names it in Flow Bar tooltips ("fn", "Right Opt").
+    var tooltipName: String {
+        switch self {
+        case .fn: "fn"
+        case .rightOption: "Right Opt"
+        case .rightCommand: "Right Cmd"
+        }
     }
 }
