@@ -6,6 +6,8 @@ struct HotkeyStep: View {
     @ObservedObject private var dictation = DictationController.shared
     @State private var shownAt = Date()
     @State private var presses = 0
+    @State private var now = Date()
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var tested: Bool { presses > 0 }
 
@@ -26,7 +28,7 @@ struct HotkeyStep: View {
                 .padding(.vertical, 10)
 
             Group {
-                if !Permissions.inputMonitoring {
+                if !Permissions.inputMonitoring || !dictation.shortcutReady {
                     Label("Onword can't see your keyboard yet — allow Input Monitoring in the previous step.",
                           systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
@@ -41,6 +43,17 @@ struct HotkeyStep: View {
             }
             .font(Theme.sans(14, .semibold))
             .frame(height: 22)
+
+            // Nothing detected after a while: the usual causes, and a fix.
+            if !tested, now.timeIntervalSince(shownAt) > 10 || (Permissions.inputMonitoring && !dictation.shortcutReady) {
+                VStack(spacing: 8) {
+                    Text("Not lighting up? Another dictation app may be using this key — quit it or pick another key below. Or reopen Onword so macOS applies Input Monitoring.")
+                        .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+                        .multilineTextAlignment(.center).frame(maxWidth: 520)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Reopen Onword") { Onboarding.relaunch() }.buttonStyle(.pillQuiet)
+                }
+            }
 
             HStack(spacing: 6) {
                 Text("Prefer another key?").foregroundStyle(Theme.inkTertiary)
@@ -62,7 +75,8 @@ struct HotkeyStep: View {
             Spacer(minLength: 0)
             HStack {
                 Spacer()
-                Button(tested ? "Continue" : "Skip", action: next).buttonStyle(.pill).keyboardShortcut(.defaultAction)
+                Button("Continue", action: next).buttonStyle(.pill).keyboardShortcut(.defaultAction)
+                    .disabled(!tested).opacity(tested ? 1 : 0.4)
             }
         }
         .onAppear {
@@ -70,6 +84,7 @@ struct HotkeyStep: View {
             dictation.hotkeyTestMode = true      // pressing only animates here; no dictation starts
         }
         .onDisappear { dictation.hotkeyTestMode = false }
+        .onReceive(timer) { now = $0 }
         .onChange(of: dictation.hotkeyIsDown) { _, down in
             if down { presses += 1 }
         }

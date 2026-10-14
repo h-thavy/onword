@@ -30,6 +30,26 @@ final class DictationController: ObservableObject {
     @Published private(set) var lastQuickTap: Date?
     /// When the last hands-free dictation finished (setup's hands-free practice).
     @Published private(set) var lastHandsFreeFinish: Date?
+    /// When a recording was dropped because it was silent or nothing was understood (setup's mic hint).
+    @Published private(set) var lastHeardNothing: Date?
+    /// Whether the shortcut listener is actually running (Input Monitoring granted and the tap live).
+    @Published private(set) var shortcutReady = false
+    /// Setup's practice steps: receives each dictation (text, was hands-free) instead of inserting it,
+    /// so the practice box fills even if another app is in front.
+    private(set) var practiceSink: ((String, Bool) -> Void)?
+    private var practiceOwner: UUID?
+
+    func setPracticeSink(owner: UUID, _ sink: @escaping (String, Bool) -> Void) {
+        practiceOwner = owner
+        practiceSink = sink
+    }
+
+    /// Clears the sink only if `owner` still holds it (the next step may already have taken over).
+    func clearPracticeSink(owner: UUID?) {
+        guard owner == nil || owner == practiceOwner else { return }
+        practiceOwner = nil
+        practiceSink = nil
+    }
     @Published private(set) var modelStatus = "Not loaded"
 
     @Published var hotkey: HotkeyMonitor.Key {
@@ -109,6 +129,17 @@ final class DictationController: ObservableObject {
             if !self.hotkeyTestMode { self.handle(self.gesture.release()) }
         }
         hotkeyMonitor.onEscape = { [weak self] in self?.cancel() }
+        // Test hook: ONWORD_TEST_HOTKEY=1 lets a script press the shortcut with a distributed notification
+        // "io.github.h-thavy.onword.test-hotkey" (object "down" / "up"); synthetic key events are often
+        // swallowed by other dictation apps.
+        if ProcessInfo.processInfo.environment["ONWORD_TEST_HOTKEY"] != nil {
+            DistributedNotificationCenter.default().addObserver(
+                forName: .init("io.github.h-thavy.onword.test-hotkey"), object: nil, queue: .main
+            ) { [weak self] note in
+                let down = note.object as? String == "down"
+                MainActor.assumeIsolated { down ? self?.hotkeyMonitor.onPress?() : self?.hotkeyMonitor.onRelease?() }
+            }
+        }
         refreshPermissions()
         loadModel()
     }
@@ -122,6 +153,7 @@ final class DictationController: ObservableObject {
             hotkeyMonitor.start()
         }
         let ready = Permissions.allGranted && hotkeyMonitor.isRunning
+        if shortcutReady != hotkeyMonitor.isRunning { shortcutReady = hotkeyMonitor.isRunning }
 
         let summary = """
             Permissions: mic=\(Permissions.microphone) accessibility=\(Permissions.accessibility) \
@@ -260,6 +292,7 @@ final class DictationController: ObservableObject {
 
         guard seconds >= minimumSeconds, AudioRecorder.rms(samples) >= silenceRMS else {
             log.notice("Skipped: \(seconds, format: .fixed(precision: 2)) s, too short or silent")
+            if seconds >= minimumSeconds { lastHeardNothing = Date() }
             state = .idle
             panel.hide()
             return
@@ -279,9 +312,18 @@ final class DictationController: ObservableObject {
             }
             do {
                 let raw = try await transcriber.transcribe(samples, language: language, prompt: dictionary.whisperPrompt())
-                if seconds < 3, TextCleaner.isLikelyHallucination(raw) { return }
+                if seconds < 3, TextCleaner.isLikelyHallucination(raw) { lastHeardNothing = Date(); return }
+                if let practiceSink {
+                    let text = cleaner.clean(raw, before: "", after: "")
+                    guard !text.isEmpty else { lastHeardNothing = Date(); return }
+                    log.notice("Practice dictation: \(seconds, format: .fixed(precision: 1)) s audio → \(text.count) chars, hands-free=\(wasHandsFree)")
+                    lastText = text
+                    if wasHandsFree { lastHandsFreeFinish = Date() }
+                    practiceSink(text, wasHandsFree)
+                    return
+                }
                 let text = cleaner.clean(raw, before: context.before, after: context.after)
-                guard !text.isEmpty else { return }
+                guard !text.isEmpty else { lastHeardNothing = Date(); return }
 
                 let method: TextInserter.Method
                 if context.isOwnApp {

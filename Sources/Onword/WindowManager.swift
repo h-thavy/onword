@@ -13,6 +13,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
     /// Opens the Hub on a page.
     func show(_ page: HubRouter.Page? = nil) {
+        // Setup can't be skipped: until it's finished, opening Onword brings setup back.
+        if !Onboarding.isComplete, ProcessInfo.processInfo.environment["ONWORD_TEST_MEETING"] == nil {
+            showOnboarding()
+            return
+        }
         if let page { HubRouter.shared.page = page }
         let window = hub ?? makeHub()
         hub = window
@@ -25,8 +30,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
     /// First-run setup: permissions, microphone test, shortcut, and a practice dictation.
     func showOnboarding() {
         let window = onboarding ?? {
+            // First-run setup has no close button; running it again from Settings does.
+            let style: NSWindow.StyleMask = Onboarding.isComplete
+                ? [.titled, .closable, .fullSizeContentView] : [.titled, .fullSizeContentView]
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
-                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+                                  styleMask: style, backing: .buffered, defer: false)
             window.contentViewController = NSHostingController(rootView: OnboardingView())
             window.title = "Welcome to Onword"
             window.titleVisibility = .hidden
@@ -44,6 +52,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     func closeOnboarding() {
+        DictationController.shared.clearPracticeSink(owner: nil)
+        DictationController.shared.hotkeyTestMode = false
         onboarding?.close()
         onboarding = nil
     }

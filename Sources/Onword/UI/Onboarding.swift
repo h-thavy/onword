@@ -2,7 +2,8 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-/// First-run setup: welcome → permissions → microphone test → shortcut → practice dictation → done.
+/// First-run setup: welcome → permissions → shortcut test → hold-to-talk → hands-free → done.
+/// Steps can't be skipped: each one unlocks only after Onword has seen it work.
 enum Onboarding {
     /// Developer option: `ONWORD_ONBOARDING_STEP=hotkey` (or `hotkey-pressed`, `holdToTalk`, …) opens setup
     /// at that step on launch, e.g. to check a screen without clicking through.
@@ -10,7 +11,27 @@ enum Onboarding {
 
     static var isComplete: Bool {
         get { UserDefaults.standard.bool(forKey: "onboardingComplete") }
-        set { UserDefaults.standard.set(newValue, forKey: "onboardingComplete") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "onboardingComplete")
+            if newValue { UserDefaults.standard.removeObject(forKey: "onboardingStep") }
+        }
+    }
+
+    /// The step reached so far, so setup resumes there after Onword is reopened (e.g. for Input Monitoring).
+    static var savedStep: Int? {
+        get { isComplete ? nil : UserDefaults.standard.object(forKey: "onboardingStep") as? Int }
+        set { UserDefaults.standard.set(newValue, forKey: "onboardingStep") }
+    }
+
+    /// Quits and reopens Onword. macOS often only applies a new Input Monitoring grant to a fresh launch.
+    @MainActor static func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        let url = Bundle.main.bundleURL
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
     }
 }
 
@@ -19,8 +40,18 @@ struct OnboardingView: View {
         case welcome, permissions, hotkey, holdToTalk, handsFree, done
     }
 
-    @State private var step: Step = Onboarding.debugStep
-        .flatMap { name in Step.allCases.first { "\($0)" == name.replacingOccurrences(of: "-pressed", with: "") } } ?? .welcome
+    @State private var step: Step = Self.initialStep
+
+    private static var initialStep: Step {
+        if let name = Onboarding.debugStep,
+           let step = Step.allCases.first(where: { "\($0)" == name.replacingOccurrences(of: "-pressed", with: "") }) {
+            return step
+        }
+        guard let saved = Onboarding.savedStep.flatMap(Step.init(rawValue:)) else { return .welcome }
+        // Practice needs the permissions; if one was turned off meanwhile, go back to that step.
+        if saved.rawValue > Step.permissions.rawValue, !Permissions.allGranted { return .permissions }
+        return saved
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +79,10 @@ struct OnboardingView: View {
     }
 
     private func next() {
-        if let following = Step(rawValue: step.rawValue + 1) { step = following }
+        if let following = Step(rawValue: step.rawValue + 1) {
+            step = following
+            Onboarding.savedStep = following.rawValue
+        }
     }
 }
 
@@ -128,6 +162,9 @@ private struct PermissionsStep: View {
     @State private var mic = Permissions.microphone
     @State private var accessibility = Permissions.accessibility
     @State private var input = Permissions.inputMonitoring
+    @ObservedObject private var dictation = DictationController.shared
+    @State private var inputGrantedAt: Date?
+    @State private var now = Date()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -142,20 +179,35 @@ private struct PermissionsStep: View {
                 }
             }
             .frame(maxWidth: 560)
-            Text("In System Settings, switch Onword on, then come back here.")
-                .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+            if needsRelaunch {
+                HStack(spacing: 10) {
+                    Text("macOS needs Onword reopened to finish turning on Input Monitoring.")
+                        .font(Theme.sans(12.5)).foregroundStyle(.orange)
+                    Button("Reopen Onword") { Onboarding.relaunch() }.buttonStyle(.pill)
+                }
+            } else {
+                Text(allGranted ? "All set." : "In System Settings, switch Onword on, then come back here.")
+                    .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+            }
             Spacer()
-            StepFooter(title: allGranted ? "Continue" : "Continue anyway", action: next)
+            StepFooter(title: "Continue", enabled: ready, action: next)
         }
-        .onReceive(timer) { _ in
+        .onReceive(timer) { date in
+            now = date
             mic = Permissions.microphone
             accessibility = Permissions.accessibility
             input = Permissions.inputMonitoring
+            if input, inputGrantedAt == nil { inputGrantedAt = date }
             DictationController.shared.refreshPermissions()
         }
     }
 
     private var allGranted: Bool { mic && accessibility && input }
+    /// All three allowed and the shortcut listener is live.
+    private var ready: Bool { allGranted && dictation.shortcutReady }
+    private var needsRelaunch: Bool {
+        allGranted && !dictation.shortcutReady && now.timeIntervalSince(inputGrantedAt ?? now) > 4
+    }
 
     private func row(_ title: String, _ detail: String, _ granted: Bool, last: Bool = false,
                      request: @escaping () -> Void) -> some View {
@@ -255,9 +307,22 @@ private struct HoldToTalkStep: View {
     @ObservedObject private var dictation = DictationController.shared
     @State private var text = ""
     @State private var shownAt = Date()
+    private let owner = UUID()
+    /// Set only by a real hold-to-talk dictation (typing in the box doesn't count).
+    @State private var done = false
+    @State private var usedHandsFree = false
 
-    private var done: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var tappedInstead: Bool { !done && (dictation.lastQuickTap ?? .distantPast) > shownAt }
+    private var hint: String? {
+        if done { return nil }
+        if usedHandsFree { return "That was hands-free (double-tap). Here, hold \(dictation.hotkey.title) down while you talk." }
+        if (dictation.lastHeardNothing ?? .distantPast) > shownAt {
+            return "Didn’t catch that. Speak a little louder, close to your microphone."
+        }
+        if (dictation.lastQuickTap ?? .distantPast) > shownAt {
+            return "Don’t just tap — hold \(dictation.hotkey.title) down while you talk, then let go."
+        }
+        return nil
+    }
 
     var body: some View {
         VStack(spacing: 18) {
@@ -274,13 +339,19 @@ private struct HoldToTalkStep: View {
                     mailField("Subject", "Quick question")
                 }
             }
-            PracticeStatus(success: done ? "The “um” and Friday are gone — it works the same in any app." : nil,
-                           hint: tappedInstead ? "Don’t just tap — hold \(dictation.hotkey.title) down while you talk, then let go." : nil)
+            PracticeStatus(success: done ? "Hold-to-talk works — it’s the same in any app." : nil, hint: hint)
             ShortcutLine()
             Spacer(minLength: 0)
-            StepFooter(title: done ? "Next: hands-free" : "Skip", action: next)
+            StepFooter(title: "Next: hands-free", enabled: done, action: next)
         }
-        .onAppear { shownAt = Date() }
+        .onAppear {
+            shownAt = Date()
+            dictation.setPracticeSink(owner: owner) { dictated, handsFree in
+                text = text.isEmpty ? dictated : text + " " + dictated
+                if handsFree { usedHandsFree = true } else { done = true; usedHandsFree = false }
+            }
+        }
+        .onDisappear { dictation.clearPracticeSink(owner: owner) }
     }
 
     private func mailField(_ label: String, _ value: String) -> some View {
@@ -300,9 +371,18 @@ private struct HandsFreeStep: View {
     @ObservedObject private var dictation = DictationController.shared
     @State private var text = ""
     @State private var shownAt = Date()
+    private let owner = UUID()
+    /// Set only by a real hands-free dictation.
+    @State private var done = false
+    @State private var heldInstead = false
 
-    private var done: Bool {
-        (dictation.lastHandsFreeFinish ?? .distantPast) > shownAt && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var hint: String? {
+        if done { return nil }
+        if heldInstead { return "That was hold-to-talk. Tap \(dictation.hotkey.title) twice quickly instead, then talk." }
+        if (dictation.lastHeardNothing ?? .distantPast) > shownAt {
+            return "Didn’t catch that. Speak a little louder, close to your microphone."
+        }
+        return nil
     }
 
     var body: some View {
@@ -327,13 +407,19 @@ private struct HandsFreeStep: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
             }
-            PracticeStatus(success: done ? "Hands-free works. Great for long messages and prompts." : nil,
-                           hint: !done && !text.isEmpty ? "That was hold-to-talk. Try a quick double-tap instead." : nil)
+            PracticeStatus(success: done ? "Hands-free works. Great for long messages and prompts." : nil, hint: hint)
             ShortcutLine()
             Spacer(minLength: 0)
-            StepFooter(title: done ? "Finish" : "Skip", action: next)
+            StepFooter(title: "Finish", enabled: done, action: next)
         }
-        .onAppear { shownAt = Date() }
+        .onAppear {
+            shownAt = Date()
+            dictation.setPracticeSink(owner: owner) { dictated, handsFree in
+                text = text.isEmpty ? dictated : text + " " + dictated
+                if handsFree { done = true; heldInstead = false } else { heldInstead = true }
+            }
+        }
+        .onDisappear { dictation.clearPracticeSink(owner: owner) }
     }
 
     private func step(_ number: String, _ label: String) -> some View {
