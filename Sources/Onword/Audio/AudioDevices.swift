@@ -11,7 +11,12 @@ enum AudioDevices {
         /// A headset or external mic you plug in or pair (Bluetooth or USB), as opposed to the Mac's own mic
         /// or a virtual/aggregate device.
         let isHeadset: Bool
+        /// The Mac's own microphone.
+        let isBuiltIn: Bool
     }
+
+    /// The Mac's own microphone, if it has one.
+    static var builtInInput: Device? { inputs().first(where: \.isBuiltIn) }
 
     /// Microphone preference meaning "use a connected headset (AirPods, USB…), otherwise the system default".
     /// Also what no preference (nil) means.
@@ -113,7 +118,7 @@ enum AudioDevices {
         let bluetooth = transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
         let headset = bluetooth || transport == kAudioDeviceTransportTypeUSB
         return Device(id: id, uid: uid, name: string(id, kAudioObjectPropertyName) ?? uid,
-                      isBluetooth: bluetooth, isHeadset: headset)
+                      isBluetooth: bluetooth, isHeadset: headset, isBuiltIn: transport == kAudioDeviceTransportTypeBuiltIn)
     }
 
     private static func string(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {

@@ -9,7 +9,9 @@ import os
 /// (and stop) the audio engine. So:
 /// - every recording gets a fresh `AVAudioEngine` bound to the current device;
 /// - a configuration change, a new default microphone, or 1.5 s without audio restarts the engine;
-/// - gaps are filled with silence, so a meeting's mic track stays in sync with the call track.
+/// - gaps are filled with silence, so a meeting's mic track stays in sync with the call track;
+/// - a mic that sends only digital zeros (AirPods still handing over from your iPhone) is dropped for the
+///   Mac's own microphone, and avoided for the next 30 s.
 /// Must be used from the main thread.
 final class AudioRecorder {
     enum RecorderError: LocalizedError {
@@ -48,6 +50,11 @@ final class AudioRecorder {
     private var restartAttempts = 0
     private var pendingSwitch: DispatchWorkItem?
     private var lastRestart = Date.distantPast
+    /// When the current mic last sent anything but pure zeros (a working mic always has some noise).
+    private var lastSoundAt = Date()
+    /// A mic that sent only zeros, and until when to avoid it.
+    private static var deadDevice: (uid: String, until: Date)?
+    private static let deadFloor: Float = 1e-6
 
     private let lock = NSLock()
     private var samples: [Float] = []
@@ -93,6 +100,15 @@ final class AudioRecorder {
             if silentFor > 1.5, Date().timeIntervalSince(self.lastRestart) > 2 {
                 self.restart(reason: "no audio for \(String(format: "%.1f", silentFor)) s")
                 self.lastRestart = Date()
+                return
+            }
+            // Buffers arrive but are all zeros: the mic isn't really connected (AirPods mid-handover).
+            let deadFor = Date().timeIntervalSince(self.lock.withLock { self.lastSoundAt })
+            if deadFor > 1.0, let current = self.currentDeviceID,
+               let builtIn = AudioDevices.builtInInput, builtIn.id != current,
+               let dead = AudioDevices.inputs().first(where: { $0.id == current }) {
+                Self.deadDevice = (dead.uid, Date().addingTimeInterval(30))
+                self.restart(reason: "\(dead.name) is sending no sound; using \(builtIn.name)")
             }
         }
     }
@@ -122,7 +138,7 @@ final class AudioRecorder {
         // Pick the microphone: per the preference (system default, Automatic = headset if connected, or a
         // specific device), falling back to the system default.
         var device = AudioDevices.defaultInput
-        if let chosen = AudioDevices.resolve(preference: preferredDeviceUID), chosen.id != device?.id,
+        if let chosen = microphoneToUse(), chosen.id != device?.id,
            let unit = input.audioUnit {
             var id = chosen.id
             let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
@@ -160,8 +176,17 @@ final class AudioRecorder {
         }
         self.engine = engine
         deviceName = device?.name
-        lock.withLock { lastBufferAt = Date() }
+        lock.withLock { lastBufferAt = Date(); lastSoundAt = Date() }
         log.notice("Recording from \(device?.name ?? "default microphone", privacy: .public) at \(format.sampleRate) Hz, \(format.channelCount) ch")
+    }
+
+    /// The preferred microphone, unless it recently sent only zeros; then the Mac's own.
+    private func microphoneToUse() -> AudioDevices.Device? {
+        let wanted = AudioDevices.resolve(preference: preferredDeviceUID)
+        if let dead = Self.deadDevice, dead.until > Date(), wanted?.uid == dead.uid {
+            return AudioDevices.builtInInput ?? wanted
+        }
+        return wanted
     }
 
     private func stopEngine() {
@@ -179,7 +204,7 @@ final class AudioRecorder {
         pendingSwitch?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.isRunning else { return }
-            let wanted = AudioDevices.resolve(preference: self.preferredDeviceUID)
+            let wanted = self.microphoneToUse()
             guard let wanted, wanted.id != self.currentDeviceID else { return }
             self.restart(reason: "microphone changed to \(wanted.name)")
         }
@@ -223,6 +248,7 @@ final class AudioRecorder {
             deliver(silence)
             log.notice("Filled a \(String(format: "%.1f", Double(silence.count) / Self.sampleRate), privacy: .public) s gap with silence")
         }
+        if Resampler.rms(chunk) > Self.deadFloor { lock.withLock { lastSoundAt = Date() } }
         deliver(chunk)
     }
 
