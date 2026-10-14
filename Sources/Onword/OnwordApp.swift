@@ -64,9 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             DockIcon.apply()
-            // Look for a new version shortly after launch, then once a day.
+            // Look for a new version shortly after launch, then every 4 hours (and whenever Settings opens).
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { UpdateChecker.shared.checkIfStale() }
-            Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { _ in
+            Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { _ in
                 MainActor.assumeIsolated { UpdateChecker.shared.check() }
             }
             History.prune()

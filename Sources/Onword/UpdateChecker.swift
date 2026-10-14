@@ -31,9 +31,9 @@ final class UpdateChecker: ObservableObject {
         return nil
     }
 
-    /// Checks unless it did within the last hour.
-    func checkIfStale() {
-        if Date().timeIntervalSince(lastCheck) > 3600 { check() }
+    /// Checks unless it did within `maxAge` seconds (opening Settings checks if the last look is over a minute old).
+    func checkIfStale(maxAge: TimeInterval = 60) {
+        if Date().timeIntervalSince(lastCheck) > maxAge { check() }
     }
 
     func check() {
