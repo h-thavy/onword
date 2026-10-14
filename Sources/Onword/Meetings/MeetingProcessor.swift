@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OnwordCore
 import SpeakerKit
@@ -19,15 +20,22 @@ actor MeetingProcessor {
 
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
     private var speakerKit: SpeakerKit?
+    private var expectedOthers: Int?
+    /// Attendees and dictionary words, to correct misheard names.
+    private var knownNames: [String] = []
 
     /// Below this loudness a track is treated as silent.
     private let silenceRMS: Float = 0.003
 
     /// Returns the transcript and names for diarized speakers read from the call app ("s1" → "Samantha").
-    func process(micURL: URL, systemURL: URL, speakersURL: URL, model: Transcriber.Model, language: String?,
-                 replacements: [String: String],
+    /// - Parameter otherPeople: how many others the calendar invited (an upper bound for the voices on the call).
+    func process(micURL: URL, systemURL: URL, speakersURL: URL, model: Transcriber.Model, fallback: Transcriber.Model? = nil,
+                 language: String?,
+                 replacements: [String: String], otherPeople: Int? = nil, names: [String] = [],
                  progress: @Sendable (String) async -> Void) async throws -> ([TranscriptSegment], [String: String]) {
-        let segments = try await transcribe(micURL: micURL, systemURL: systemURL, model: model, language: language,
+        expectedOthers = otherPeople
+        knownNames = names
+        let segments = try await transcribe(micURL: micURL, systemURL: systemURL, model: model, fallback: fallback, language: language,
                                             replacements: replacements, progress: progress)
         let observations = Self.loadObservations(speakersURL)
         let names = SpeakerNames.assign(segments: segments, observations: observations)
@@ -41,7 +49,8 @@ actor MeetingProcessor {
         return text.split(separator: "\n").compactMap { try? decoder.decode(SpeakerObservation.self, from: Data($0.utf8)) }
     }
 
-    private func transcribe(micURL: URL, systemURL: URL, model: Transcriber.Model, language: String?, replacements: [String: String],
+    private func transcribe(micURL: URL, systemURL: URL, model: Transcriber.Model, fallback: Transcriber.Model?,
+                            language: String?, replacements: [String: String],
                             progress: @Sendable (String) async -> Void) async throws -> [TranscriptSegment] {
         let mic = (try? AudioFileWriter.read(micURL)) ?? []
         let system = (try? AudioFileWriter.read(systemURL)) ?? []
@@ -52,7 +61,13 @@ actor MeetingProcessor {
 
         let transcriber = Self.transcriber
         await progress("Loading speech model…")
-        try await transcriber.load(model, downloadBase: AppPaths.models)
+        do {
+            try await transcriber.load(model, downloadBase: AppPaths.models)
+        } catch {
+            guard let fallback, fallback != model else { throw error }
+            log.error("Meeting model \(model.rawValue, privacy: .public) unavailable (\(error.localizedDescription, privacy: .public)); using \(fallback.rawValue, privacy: .public)")
+            try await transcriber.load(fallback, downloadBase: AppPaths.models)
+        }
 
         if systemHasSpeech {
             await progress("Transcribing the other speakers…")
@@ -65,6 +80,8 @@ actor MeetingProcessor {
                 await progress("Transcribing your microphone…")
                 mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: language)), speaker: "me")
                 let before = mine.count
+                // The call leaking from the speakers: a faint copy of the call audio, or mostly the same words.
+                mine = mine.filter { !EchoDetector.isEcho(mic: mic, system: system, start: $0.start, end: $0.end) }
                 mine = TranscriptMerger.removeEcho(me: mine, others: tagged)
                 log.notice("Mic: \(mine.count) segment(s) kept, \(before - mine.count) dropped as echo")
             }
@@ -85,8 +102,11 @@ actor MeetingProcessor {
     /// ("flow light" → "Onword"). Fillers are kept in transcripts. Drops segments left empty.
     private func applyDictionary(_ segments: [TranscriptSegment], _ replacements: [String: String]) -> [TranscriptSegment] {
         let cleaner = TextCleaner(removeFillers: false, smartSpacing: false, replacements: replacements)
+        let corrector = NameCorrector(names: knownNames) { word in
+            NSSpellChecker.shared.checkSpelling(of: word, startingAt: 0).location == NSNotFound
+        }
         return segments
-            .map { var s = $0; s.text = cleaner.clean(s.text); return s }
+            .map { var s = $0; s.text = corrector.correct(cleaner.clean(s.text)); return s }
             .filter { !$0.text.isEmpty }
     }
 
@@ -95,8 +115,16 @@ actor MeetingProcessor {
             speakerKit = try await SpeakerKit(SpeakerModels.config(load: true))
         }
         guard let speakerKit else { return [] }
-        let diarization = try await speakerKit.diarize(audioArray: samples)
+        let threshold = ProcessInfo.processInfo.environment["ONWORD_DIARIZE_THRESHOLD"].flatMap(Float.init)
+        var diarization = try await speakerKit.diarize(audioArray: samples,
+                                                       options: PyannoteDiarizationOptions(clusterDistanceThreshold: threshold))
         log.notice("Diarization found \(diarization.speakerCount) speaker(s)")
+        // More voices than the people invited: one person was split in two. Cluster again with that limit.
+        if let others = expectedOthers, others >= 1, diarization.speakerCount > others {
+            diarization = try await speakerKit.diarize(audioArray: samples, options: PyannoteDiarizationOptions(
+                numberOfSpeakers: others, clusterDistanceThreshold: threshold))
+            log.notice("Re-clustered to the \(others) invited speaker(s)")
+        }
 
         let tagged = diarization.addSpeakerInfo(to: transcription).flatMap { $0 }.map { segment in
             let id = segment.speaker.speakerId ?? segment.speaker.speakerIds.first
@@ -110,6 +138,12 @@ actor MeetingProcessor {
     /// Removes Whisper's stock silence outputs ("you", "Thank you.") at the raw-segment level, before
     /// speaker alignment can glue them onto a real sentence.
     private func withoutHallucinations(_ results: [TranscriptionResult]) -> [TranscriptionResult] {
+        // Debug aid: ONWORD_DEBUG_MEETING=1 logs every raw segment with its confidence.
+        if ProcessInfo.processInfo.environment["ONWORD_DEBUG_MEETING"] != nil {
+            for segment in results.flatMap(\.segments) {
+                log.notice("raw \(segment.start, format: .fixed(precision: 1))-\(segment.end, format: .fixed(precision: 1)) lp=\(segment.avgLogprob, format: .fixed(precision: 2)) ns=\(segment.noSpeechProb, format: .fixed(precision: 2)) cr=\(segment.compressionRatio, format: .fixed(precision: 2)) \(segment.text, privacy: .public)")
+            }
+        }
         for result in results {
             result.segments.removeAll { $0.end - $0.start <= 1.5 && TextCleaner.isLikelyHallucination($0.text) }
         }

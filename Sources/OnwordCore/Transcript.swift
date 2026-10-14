@@ -46,17 +46,23 @@ public enum TranscriptMerger {
 
     /// Drops "me" segments that are just the other side's audio picked up by the microphone
     /// (happens without headphones): same time window and mostly the same words.
-    public static func removeEcho(me: [TranscriptSegment], others: [TranscriptSegment], threshold: Double = 0.6) -> [TranscriptSegment] {
+    /// Words count as shared when they start the same (“analytic” / “analytics”), since echo is
+    /// often transcribed a little differently.
+    public static func removeEcho(me: [TranscriptSegment], others: [TranscriptSegment], threshold: Double = 0.5) -> [TranscriptSegment] {
         me.filter { mine in
-            let overlapping = others.filter { $0.start < mine.end && $0.end > mine.start }
+            let overlapping = others.filter { $0.start < mine.end + 1 && $0.end > mine.start - 1 }
             guard !overlapping.isEmpty else { return true }
-            let theirWords = Set(overlapping.flatMap { words($0.text) })
+            let theirStems = Set(overlapping.flatMap { words($0.text) }.map(stem))
             let myWords = words(mine.text)
             guard !myWords.isEmpty else { return false }
-            let shared = myWords.filter { theirWords.contains($0) }.count
+            // "Thanks, bye" over "Thanks everyone": too few words to judge by text (loudness decides those).
+            guard myWords.count >= 3 else { return true }
+            let shared = myWords.filter { theirStems.contains(stem($0)) }.count
             return Double(shared) / Double(myWords.count) < threshold
         }
     }
+
+    private static func stem(_ word: String) -> String { String(word.prefix(5)) }
 
     /// "Same person": moves every segment of `from` to `to` and re-joins adjacent turns.
     public static func reassign(_ segments: [TranscriptSegment], from: String, to: String) -> [TranscriptSegment] {
@@ -161,5 +167,151 @@ public enum TranscriptText {
         }
         if !rest.isEmpty { pieces.append(String(rest)) }
         return pieces
+    }
+}
+
+/// Tells your own speech on the microphone from the call leaking out of the Mac's speakers: echo is a faint
+/// copy of the call audio, while your voice is loud on your mic. Compares loudness frame by frame
+/// (100 ms) while the call is active.
+public enum EchoDetector {
+    /// True when, during the segment, the call is playing most of the time and the mic is only a faint copy
+    /// of it (median mic/call loudness below `ratio`).
+    public static func isEcho(mic: [Float], system: [Float], start: Double, end: Double,
+                              sampleRate: Double = 16_000, ratio: Float = 0.3) -> Bool {
+        let frame = Int(sampleRate / 10)
+        let first = max(0, Int(start * sampleRate)), last = min(mic.count, system.count, Int(end * sampleRate))
+        guard last - first >= frame else { return false }
+        var ratios: [Float] = []
+        var active = 0, frames = 0
+        var i = first
+        while i + frame <= last {
+            let callRMS = rms(system, i, frame), micRMS = rms(mic, i, frame)
+            frames += 1
+            if callRMS > 0.01 {
+                active += 1
+                ratios.append(micRMS / callRMS)
+            }
+            i += frame
+        }
+        guard frames > 0, Double(active) / Double(frames) >= 0.6, !ratios.isEmpty else { return false }
+        ratios.sort()
+        return ratios[ratios.count / 2] < ratio
+    }
+
+    private static func rms(_ x: [Float], _ start: Int, _ count: Int) -> Float {
+        var sum: Float = 0
+        for k in start..<(start + count) { sum += x[k] * x[k] }
+        return (sum / Float(count)).squareRoot()
+    }
+}
+
+/// Fixes names the speech model misheard ("Chantavi" → "Chanthavy", "Penompen" → "Phnom Penh") using the
+/// people invited and your dictionary. Only words that aren't real words are touched, so "camper" stays
+/// "camper" even if a "Kampot" is expected. One to three words are compared with each name (and the name's
+/// own words), by spelling and rough sound.
+public struct NameCorrector {
+    private let names: [(name: String, key: String, words: Int)]
+    private let isWord: (String) -> Bool
+
+    /// - Parameter isWord: whether a word is ordinary vocabulary (e.g. the spell checker knows it).
+    public init(names: [String], isWord: @escaping (String) -> Bool) {
+        var seen = Set<String>()
+        var list: [(String, String, Int)] = []
+        for full in names {
+            // Full names and each part of them ("Dara Sok" → also "Dara", "Sok").
+            let parts = full.split(separator: " ").map(String.init)
+            for candidate in [full] + (parts.count > 1 ? parts : []) {
+                let key = Self.key(candidate)
+                guard key.count >= 4, seen.insert(key).inserted else { continue }
+                list.append((candidate, key, candidate.split(separator: " ").count))
+            }
+        }
+        self.names = list
+        self.isWord = isWord
+    }
+
+    public func correct(_ text: String) -> String {
+        guard !names.isEmpty else { return text }
+        var tokens = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        var i = 0
+        while i < tokens.count {
+            var replaced = false
+            for span in stride(from: 3, through: 1, by: -1) where i + span <= tokens.count {
+                let window = Array(tokens[i..<(i + span)])
+                let core = window.map { $0.trimmingCharacters(in: .punctuationCharacters) }
+                let phrase = core.joined(separator: " ")
+                let key = Self.key(phrase)
+                guard key.count >= 4 else { continue }
+                // Real words are left alone unless together they spell a name exactly ("launch darkly").
+                let realWords = core.allSatisfy { $0.isEmpty || isWord($0.lowercased()) }
+                // A near match never swallows real words at its edges ("CIMREAP is" → "Siem Reap is").
+                let edgesAreWords = span > 1 && (isWord(core.first!.lowercased()) || isWord(core.last!.lowercased()))
+                let match = realWords || edgesAreWords ? (span > 1 ? names.first { $0.key == key } : nil) : best(for: key)
+                guard let match, match.name != phrase else { continue }
+                let trailing = String(window.last!.reversed().prefix { $0.isPunctuation }.reversed())
+                let leading = String(window.first!.prefix { $0.isPunctuation })
+                tokens.replaceSubrange(i..<(i + span), with: [leading + match.name + trailing])
+                replaced = true
+                break
+            }
+            i += 1
+            _ = replaced
+        }
+        return tokens.joined(separator: " ")
+    }
+
+    private func best(for key: String) -> (name: String, key: String, words: Int)? {
+        var bestMatch: (name: String, key: String, words: Int)?
+        var bestScore = Double.infinity
+        for entry in names {
+            let distance = Double(Self.levenshtein(key, entry.key)) / Double(max(key.count, entry.key.count))
+            // Close in sound, and starting with the same sound.
+            // Longer names can be a little further off ("Penompin" for "Phnom Penh").
+            let limit = min(key.count, entry.key.count) >= 7 ? 0.4 : 0.34
+            if distance <= limit, distance < bestScore, Self.sameSound(key.first, entry.key.first) {
+                bestScore = distance
+                bestMatch = entry
+            }
+        }
+        return bestMatch
+    }
+
+    /// First letters that sound alike (Phnom / Penompen, Gary / Kerry).
+    private static let soundGroups: [Set<Character>] = [["p", "f", "b", "v"], ["k", "g"], ["s"], ["t", "d"], ["m", "n"]]
+
+    static func sameSound(_ a: Character?, _ b: Character?) -> Bool {
+        guard let a, let b else { return false }
+        return a == b || soundGroups.contains { $0.contains(a) && $0.contains(b) }
+    }
+
+    /// Letters only, lowercased, with common sound-alikes folded (ph→f, soft c→s, hard c/q→k, z→s, double
+    /// letters, silent h…).
+    static func key(_ text: String) -> String {
+        var s = text.lowercased().filter(\.isLetter)
+        for (from, to) in [("ph", "f"), ("th", "t"), ("ck", "k"), ("ce", "se"), ("ci", "si"), ("cy", "si"), ("q", "k"),
+                           ("c", "k"), ("z", "s"), ("y", "i"), ("ee", "i"), ("ea", "i"), ("w", "v")] {
+            s = s.replacingOccurrences(of: from, with: to)
+        }
+        s = s.replacingOccurrences(of: "h", with: "")
+        var out = ""
+        for ch in s where out.last != ch { out.append(ch) }
+        return out
+    }
+
+    static func levenshtein(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var row = Array(0...b.count)
+        for i in 1...a.count {
+            var previous = row[0]
+            row[0] = i
+            for j in 1...b.count {
+                let temp = row[j]
+                row[j] = min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] == b[j - 1] ? 0 : 1))
+                previous = temp
+            }
+        }
+        return row[b.count]
     }
 }

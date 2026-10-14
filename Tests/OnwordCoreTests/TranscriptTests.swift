@@ -65,6 +65,41 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(md.hasPrefix("# Standup"))
         XCTAssertTrue(md.contains("**Dara** [0:42]: Shipped it."))
     }
+
+    func testEchoDetectorTellsEchoFromYourVoice() {
+        let rate = 16_000
+        let call = (0..<(rate * 4)).map { Float(sin(Double($0) * 0.05)) * 0.3 }
+        // The mic hears only a faint copy of the call…
+        let echoMic = call.map { $0 * 0.06 }
+        XCTAssertTrue(EchoDetector.isEcho(mic: echoMic, system: call, start: 0, end: 4))
+        // …or your own loud voice over it.
+        let voiceMic = (0..<(rate * 4)).map { Float(sin(Double($0) * 0.13)) * 0.25 }
+        XCTAssertFalse(EchoDetector.isEcho(mic: voiceMic, system: call, start: 0, end: 4))
+        // While the call is silent nothing is echo.
+        XCTAssertFalse(EchoDetector.isEcho(mic: echoMic, system: [Float](repeating: 0, count: rate * 4), start: 0, end: 4))
+    }
+
+    func testNameCorrectorFixesMisheardNames() {
+        let english: Set<String> = ["the", "customer", "from", "asked", "about", "support", "we", "have", "three",
+                                    "candidates", "and", "camper", "release", "for", "offsite", "in", "is", "on"]
+        let corrector = NameCorrector(names: ["Chanthavy", "Phnom Penh", "Siem Reap", "Kampot", "Marco Ruiz"]) { english.contains($0) }
+        XCTAssertEqual(corrector.correct("We have three candidates, Chantavi, Marco and Priya."),
+                       "We have three candidates, Chanthavy, Marco and Priya.")
+        XCTAssertEqual(corrector.correct("The customer from Penompen asked about support."),
+                       "The customer from Phnom Penh asked about support.")
+        XCTAssertEqual(corrector.correct("The offsite in CIMREAP is on Friday."), "The offsite in Siem Reap is on Friday.")
+        XCTAssertEqual(corrector.correct("customer from Penompin asked"), "customer from Phnom Penh asked")
+        let tools = NameCorrector(names: ["LaunchDarkly"]) { ["set", "up", "in", "launch", "darkly"].contains($0) }
+        XCTAssertEqual(tools.correct("set it up in launch darkly"), "set it up in LaunchDarkly")
+        // Real words stay, even when they sound like a name.
+        XCTAssertEqual(corrector.correct("for the camper release"), "for the camper release")
+    }
+
+    func testRemoveEchoMatchesGarbledWords() {
+        let others = [seg(36, 40, "s2", "Could we move the analytics dashboard to next sprint, then?")]
+        let me = [seg(36, 39, "me", "Did we need the analytic dashboard to make it print, then?")]
+        XCTAssertTrue(TranscriptMerger.removeEcho(me: me, others: others).isEmpty)
+    }
 }
 
 final class NoteTests: XCTestCase {
@@ -146,4 +181,5 @@ final class DictationStatsTests: XCTestCase {
         XCTAssertEqual(dict.snippets, [:])
         XCTAssertEqual(dict.allReplacements, ["btw": "by the way"])
     }
+
 }

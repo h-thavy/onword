@@ -85,7 +85,9 @@ final class MeetingSummarizer: ObservableObject {
         let chunks = TranscriptText.chunks(lines, maxCharacters: chunkCharacters)
         if chunks.count == 1 {
             progress("Writing summary…")
-            return try await respond(Self.finalPrompt(source: "Transcript", text: chunks[0]))
+            let draft: GeneratedNotes = try await respond(Self.finalPrompt(source: "Transcript", text: chunks[0]))
+            progress("Checking the notes…")
+            return (try? await review(draft, transcript: chunks[0])) ?? draft
         }
 
         // Map: notes for each part of a long meeting.
@@ -108,6 +110,31 @@ final class MeetingSummarizer: ObservableObject {
         return final
     }
 
+    /// Second pass: the model checks its notes against the transcript and fixes what's wrong or vague
+    /// (in testing the first draft said "send the offer to the candidates" when only one was meant).
+    @available(macOS 26, *)
+    private func review(_ draft: GeneratedNotes, transcript: String) async throws -> GeneratedNotes {
+        let draftText = """
+            Summary: \(draft.summary)
+            Decisions:
+            \(draft.decisions.map { "- " + $0 }.joined(separator: "\n"))
+            Action items:
+            \(draft.actionItems.map { "- \($0.task) (owner: \($0.owner), due: \($0.due))" }.joined(separator: "\n"))
+            """
+        return try await respond("""
+            Check these meeting notes against the transcript. Correct anything that is wrong, too vague or missing: \
+            use the exact names, numbers, amounts, dates and places that were said; make each decision and action \
+            item say exactly who and what; add clear decisions or commitments that are missing; remove anything \
+            not supported by the transcript. Then write the corrected notes.
+
+            Notes:
+            \(draftText)
+
+            Transcript:
+            \(transcript)
+            """)
+    }
+
     @available(macOS 26, *)
     private func respond<T: Generable>(_ prompt: String) async throws -> T {
         let session = LanguageModelSession(instructions: Self.instructions)
@@ -115,9 +142,11 @@ final class MeetingSummarizer: ObservableObject {
     }
 
     private static let instructions = """
-        You write short, factual meeting notes from a transcript. Refer to people by the names used in the \
-        transcript. Only include what was actually said; never invent decisions, owners or dates. If an \
-        action item has no clear owner or due date, leave that field empty.
+        You write short, factual meeting notes from a transcript. Be specific: keep the exact names, numbers, \
+        amounts, dates and places that were said, spelled as in the transcript, and say exactly who or what \
+        something applies to (never "the candidates" when one person was meant). Refer to people by the names \
+        used in the transcript. Only include what was actually said; never invent decisions, owners or dates. \
+        If an action item has no clear owner or due date, leave that field empty.
         """
 
     private static func finalPrompt(source: String, text: String) -> String {
@@ -142,9 +171,9 @@ final class MeetingSummarizer: ObservableObject {
 @available(macOS 26, *)
 @Generable
 struct GeneratedNotes {
-    @Guide(description: "Two to four sentences: what the meeting was about and what was concluded.")
+    @Guide(description: "Two to four sentences: what the meeting was about and what was concluded, with the specific names, numbers and dates.")
     var summary: String
-    @Guide(description: "Decisions that were agreed on. Empty if none.")
+    @Guide(description: "Decisions that were agreed on, each with its specifics (who, what, amounts, dates). Empty if none.")
     var decisions: [String]
     @Guide(description: "Concrete tasks someone committed to do. Empty if none.")
     var actionItems: [GeneratedTodo]
@@ -153,7 +182,7 @@ struct GeneratedNotes {
 @available(macOS 26, *)
 @Generable
 struct GeneratedTodo {
-    @Guide(description: "The task, starting with a verb.")
+    @Guide(description: "The task, starting with a verb, naming exactly what and for whom (as said in the meeting).")
     var task: String
     @Guide(description: "Name of the person who will do it, or empty if not stated.")
     var owner: String
@@ -175,7 +204,7 @@ struct PartNotes {
 
 private extension String {
     var nilIfBlank: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
         return trimmed.isEmpty ? nil : trimmed
     }
 }

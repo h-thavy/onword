@@ -202,9 +202,11 @@ actor Transcriber {
     /// Long-form transcription for meetings: keeps segment and word timestamps so speakers can be attached.
     /// Splits on silence (VAD) and decodes chunks in parallel.
     ///
-    /// No vocabulary prompt here: in testing, prompt tokens made Whisper merge segments and emit wrong
-    /// timestamps (0–19.5 s for a 4.7 s sentence), which breaks speaker alignment. Apply the dictionary's
-    /// replacements to the text afterwards instead.
+    /// Whisper's own 30-second windows in order (each window continues from the last), not silence-split
+    /// chunks: in testing, a quiet chunk with speech in it could come back empty, losing whole sentences.
+    ///
+    /// No vocabulary prompt: in testing it made Whisper drop and garble whole passages (word errors went from
+    /// about 9% to over 50%). Names are corrected afterwards instead (`NameCorrector`).
     func transcribeLong(_ samples: [Float], language: String?) async throws -> [TranscriptionResult] {
         guard let kit, let loadedModel else { throw TranscriberError.notLoaded }
         let lang = loadedModel.isEnglishOnly ? "en" : language
@@ -218,7 +220,7 @@ actor Transcriber {
             withoutTimestamps: false,
             wordTimestamps: true,
             concurrentWorkerCount: 4,
-            chunkingStrategy: .vad
+            chunkingStrategy: ChunkingStrategy.none
         )
         return try await kit.transcribe(audioArray: samples, decodeOptions: options)
     }

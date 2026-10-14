@@ -203,10 +203,19 @@ final class MeetingRecorder: ObservableObject {
         try? FileManager.default.removeItem(at: part)
     }
 
+    /// Names worth spelling right: the people invited, the call's participants, and your dictionary's words.
+    static func knownNames(for meeting: Meeting, vocabulary: [String]) -> [String] {
+        (meeting.attendees ?? []) + (meeting.participants ?? []) + vocabulary
+    }
+
     /// Test hook: `ONWORD_TEST_MEETING=/folder` (containing mic.wav and/or system.wav) imports those
     /// tracks as a new meeting and processes it, exercising everything after the audio capture.
     func importForTesting(from folder: URL) {
         var meeting = Meeting(title: "Test meeting – \(folder.lastPathComponent)")
+        // attendees.txt (one name per line) stands in for the calendar invite.
+        if let names = try? String(contentsOf: folder.appendingPathComponent("attendees.txt"), encoding: .utf8) {
+            meeting.attendees = names.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        }
         try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
         for (name, destination) in [("mic", meeting.micURL), ("system", meeting.systemURL)] {
             let source = folder.appendingPathComponent("\(name).wav")
@@ -225,16 +234,24 @@ final class MeetingRecorder: ObservableObject {
     func process(_ id: UUID) {
         guard let meeting = MeetingStore.shared.meeting(id) else { return }
         let controller = DictationController.shared
-        let model = controller.model
-        let language = controller.language == "auto" ? nil : controller.language
-        let replacements = UserDictionary.load(from: AppPaths.dictionary).allReplacements
+        // Meetings are transcribed after the call, so they use the most accurate model (Large v3 Turbo, downloaded
+        // once); in testing it cut word errors on call audio by about a quarter. Your dictation model is the
+        // fallback when it can't be downloaded. Test hook: ONWORD_MEETING_MODEL=<raw value>.
+        let model = ProcessInfo.processInfo.environment["ONWORD_MEETING_MODEL"].flatMap(Transcriber.Model.init(rawValue:)) ?? .largeTurbo
+        let fallback = controller.model
+        // An English-only dictation model means you speak English; tell the multilingual model so.
+        let language = controller.language == "auto" ? (controller.model.isEnglishOnly ? "en" : nil) : controller.language
+        let dictionary = UserDictionary.load(from: AppPaths.dictionary)
+        let replacements = dictionary.allReplacements
+        let names = Self.knownNames(for: meeting, vocabulary: dictionary.vocabulary)
         MeetingStore.shared.update(id) { $0.status = .processing; $0.statusDetail = "Starting…" }
 
         Task {
             do {
                 let (segments, names) = try await MeetingProcessor.shared.process(
                     micURL: meeting.micURL, systemURL: meeting.systemURL, speakersURL: meeting.speakersURL,
-                    model: model, language: language, replacements: replacements
+                    model: model, fallback: fallback, language: language, replacements: replacements,
+                    otherPeople: (meeting.attendees?.count).flatMap { $0 > 0 ? $0 : nil }, names: names
                 ) { message in
                     await MainActor.run { MeetingStore.shared.update(id) { $0.statusDetail = message } }
                 }
@@ -251,6 +268,12 @@ final class MeetingRecorder: ObservableObject {
                               let first = m.speakers.first(where: { m.speakerNames[$0] == name }), first != speaker else { continue }
                         m.segments = TranscriptMerger.reassign(m.segments, from: speaker, to: first)
                         m.speakerNames[speaker] = nil
+                    }
+                    // A 1:1: one other person invited and one other voice heard — that voice is them.
+                    let others = m.speakers.filter { $0 != "me" && $0 != "unknown" }
+                    if others.count == 1, m.speakerNames[others[0]] == nil || m.speakerNames[others[0]]?.hasPrefix("Speaker ") == true {
+                        let invited = m.participants?.count == 1 ? m.participants : m.attendees
+                        if let only = invited, only.count == 1 { m.speakerNames[others[0]] = only[0] }
                     }
                     // Keep names the user already set; default the rest.
                     var numbered = 0
@@ -270,6 +293,7 @@ final class MeetingRecorder: ObservableObject {
                 }
                 // Short meetings without your own notes wait for "Generate summary" (as in Wispr Flow).
                 if let m = MeetingStore.shared.meeting(id), m.duration <= 300,
+                   ProcessInfo.processInfo.environment["ONWORD_TEST_SUMMARIZE"] == nil,
                    m.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, m.summary == nil {
                     MeetingStore.shared.update(id) { $0.summaryDeferred = true }
                 } else {

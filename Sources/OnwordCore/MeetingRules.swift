@@ -175,7 +175,9 @@ public enum ActionItemCheck {
             let sameSpeaker = line.speaker.caseInsensitiveCompare(owner) == .orderedSame
                 || line.speaker.lowercased().hasPrefix(first.lowercased())
             let named = text.range(of: first, options: .caseInsensitive) != nil
-            return sameSpeaker || named
+            // An unnamed voice ("Speaker 3") could be that person: nothing contradicts the owner.
+            let unnamed = line.speaker.range(of: #"^(Speaker \d+|Unknown|S\d+)$"#, options: [.regularExpression, .caseInsensitive]) != nil
+            return sameSpeaker || named || unnamed
         }
         return true
     }
