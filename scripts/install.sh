@@ -6,7 +6,7 @@
 #   curl -fsSL .../install.sh | bash -s -- --uninstall --purge  # also delete history, notes, meetings, models
 #
 # Environment: ONWORD_INSTALL_DIR (default /Applications, or ~/Applications if not writable),
-#              ONWORD_NO_OPEN=1 (don't launch after installing), ONWORD_VERSION=v0.1.0 (pin a release).
+#              ONWORD_NO_OPEN=1 (don't launch after installing), ONWORD_VERSION=v1.0.0 (pin a release).
 set -euo pipefail
 
 REPO="h-thavy/onword"
