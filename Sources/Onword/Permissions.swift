@@ -51,11 +51,8 @@ enum Permissions {
     /// app, so after the first time Onword opens the pane directly instead.
     static func requestAccessibility(from origin: PendingRequest.Origin) {
         guard !AXIsProcessTrusted() else { return }
-        // A grant for an earlier build stays listed (switched on) but doesn't apply to this one, so Allow
-        // would lead to a switch that does nothing. Clear it; asking again adds this build.
-        let cleared = clearStaleGrant("Accessibility")
         let promptedKey = "accessibilityPrompted"
-        if cleared || !UserDefaults.standard.bool(forKey: promptedKey) {
+        if !UserDefaults.standard.bool(forKey: promptedKey) {
             UserDefaults.standard.set(true, forKey: promptedKey)
             settingsWasRunning = systemSettings != nil
             pendingRequest = (.accessibility, origin)
@@ -68,13 +65,24 @@ enum Permissions {
 
     static func requestInputMonitoring(from origin: PendingRequest.Origin) {
         guard !CGPreflightListenEventAccess() else { return }
-        clearStaleGrant("ListenEvent")
         if !CGRequestListenEventAccess() { openSettings("Privacy_ListenEvent", for: .inputMonitoring, from: origin) }
     }
 
-    /// Releases are signed per build (ad hoc), and macOS ties these permissions to the exact build: after an
-    /// update the old entry is still there and on, but no longer matches. Removes Onword's entry for `service`
-    /// (only ever called while this build lacks the permission). Returns whether it ran.
+    /// Once per new version, at launch and before anything asks: clears Accessibility and Input Monitoring
+    /// entries this build doesn't have. An entry made for a differently signed build (the ad-hoc releases
+    /// before 1.0.1) stays listed and switched on but doesn't apply, and Allow would only lead to it. Doing it
+    /// later would remove the entry macOS adds when the app first asks, which it won't add again until relaunch.
+    static func clearStaleGrantsAfterUpdate() {
+        let key = "staleGrantsCheckedBuild"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        guard UserDefaults.standard.string(forKey: key) != build else { return }
+        UserDefaults.standard.set(build, forKey: key)
+        if !AXIsProcessTrusted(), clearStaleGrant("Accessibility") {
+            UserDefaults.standard.set(false, forKey: "accessibilityPrompted")   // the macOS prompt can show again
+        }
+        if !CGPreflightListenEventAccess() { clearStaleGrant("ListenEvent") }
+    }
+
     @discardableResult
     private static func clearStaleGrant(_ service: String) -> Bool {
         guard let id = Bundle.main.bundleIdentifier else { return false }

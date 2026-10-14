@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
+            Permissions.clearStaleGrantsAfterUpdate()   // before the shortcut or setup asks for anything
             DockIcon.apply()
             // Look for a new version shortly after launch, then every 4 hours (and whenever Settings opens).
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { UpdateChecker.shared.checkIfStale() }
