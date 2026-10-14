@@ -39,6 +39,14 @@ Add `--purge` to also delete your history, notes, meetings and downloaded models
 
 Onword matches the text around your cursor, adding a space or a capital letter when needed. It inserts text directly into native text fields and falls back to a clipboard paste elsewhere; your clipboard is restored afterwards. If you switch apps before the text is ready, it's put on your clipboard instead of typed into the wrong place.
 
+**Languages:** English by default, or any of Whisper's 99 languages (Japanese, Chinese, Khmer, Thai, Spanish…) under Settings → General → Languages. Pick several and Onword detects which one you're speaking. Languages other than English need a one-time download of the multilingual model (about 500 MB); you can keep dictating meanwhile.
+
+### Flow Bar
+A small bar sits above the Dock (or near the bottom of the screen when the Dock is hidden). Hover it to start a hands-free dictation or Notetaker with one click; while you dictate it shows a live waveform, and hands-free shows ✕ / ✓ to cancel or finish. Right-click for Hide for 1 hour, microphone and more. Turn it off in Settings → System.
+
+### Insights
+Words per minute (and how that compares with typing speeds), fixes Onword made, total words, which kinds of apps you dictate into, and a day-streak heatmap — all worked out on your Mac from your history. The *Your voice* tab adds your most used and most corrected words and your peak dictation time.
+
 ### Notetaker (⌃⌥M)
 Records calls **without a bot joining**: your microphone and your Mac's audio output are recorded as two separate tracks.
 - **Call detection:** Onword can notice a call (Zoom, Teams, FaceTime, Webex, Discord, or Google Meet / Teams / Slack huddles in a browser) and ask whether to record. It stops when the call ends.
