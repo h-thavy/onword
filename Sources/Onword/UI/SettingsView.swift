@@ -80,7 +80,7 @@ struct SettingsView: View {
             SettingsRow(title: "Microphone", detail: microphoneDetail) {
                 changeMenu(microphoneName) {
                     Button("Automatic — AirPods or headset when connected") { dictation.microphoneUID = AudioDevices.automatic }
-                    Button("System default (\(AudioDevices.defaultInput?.name ?? "none"))") { dictation.microphoneUID = nil }
+                    Button("System default (\(AudioDevices.defaultInput?.name ?? "none"))") { dictation.microphoneUID = AudioDevices.systemDefault }
                     Divider()
                     ForEach(AudioDevices.inputs()) { device in Button(device.name) { dictation.microphoneUID = device.uid } }
                 }
@@ -249,7 +249,7 @@ struct SettingsView: View {
 
     private var googleStatus: String {
         if let email = google.connectedEmail { return "Connected as \(email). Read-only; upcoming meetings appear in Notetaker." }
-        if !google.isConfigured { return "Not available in this build (no Google sign-in configured)." }
+        if !google.isConfigured { return "Google sign-in isn't available in this build. Add your Google account under Internet Accounts and use Mac Calendar below — it shows the same meetings." }
         if let error = google.lastError { return error }
         return "Sign in with Google to see upcoming meetings, join in one click, and name notes after the event."
     }
@@ -299,15 +299,15 @@ struct SettingsView: View {
 
     private var microphoneName: String {
         switch dictation.microphoneUID {
-        case nil: return "System default"
-        case AudioDevices.automatic?: return "Automatic"
+        case nil, AudioDevices.automatic?: return "Automatic"
+        case AudioDevices.systemDefault?: return "System default"
         case let uid?: return AudioDevices.device(uid: uid)?.name ?? "System default"
         }
     }
 
     private var microphoneDetail: String {
         let active = AudioDevices.resolve(preference: dictation.microphoneUID)
-        if dictation.microphoneUID == AudioDevices.automatic {
+        if dictation.microphoneUID == nil || dictation.microphoneUID == AudioDevices.automatic {
             return "Using \(active?.name ?? "the Mac's microphone") now. Switches to AirPods or a headset when you connect one, and back when you disconnect."
         }
         if active?.isBluetooth == true {

@@ -2,39 +2,37 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key>
-    <string>io.github.h-thavy.onword</string>
-    <key>CFBundleName</key>
-    <string>Onword</string>
-    <key>CFBundleDisplayName</key>
-    <string>Onword</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleExecutable</key>
-    <string>Onword</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <!-- Menu-bar app: no Dock icon. It only comes to the front when you open Scratchpad or Meetings. -->
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Onword records your voice while you hold the hotkey and transcribes it on this Mac.</string>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Onword records the other people in your call (your Mac's audio output) when you record a meeting. Audio stays on this Mac.</string>
-    <!-- EB Garamond and Figtree (SIL Open Font License), loaded from Contents/Resources/Fonts. -->
-    <key>ATSApplicationFontsPath</key>
-    <string>Fonts</string>
-    <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
-    <key>NSCalendarsUsageDescription</key>
-    <string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+	<key>ATSApplicationFontsPath</key>
+	<string>Fonts</string>
+	<key>CFBundleDisplayName</key>
+	<string>Onword</string>
+	<key>CFBundleExecutable</key>
+	<string>Onword</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.h-thavy.onword</string>
+	<key>CFBundleName</key>
+	<string>Onword</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Onword records the other people in your call (your Mac's audio output) when you record a meeting. Audio stays on this Mac.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Onword records your voice while you hold the hotkey and transcribes it on this Mac.</string>
 </dict>
 </plist>

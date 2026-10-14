@@ -14,14 +14,17 @@ enum AudioDevices {
     }
 
     /// Microphone preference meaning "use a connected headset (AirPods, USB…), otherwise the system default".
+    /// Also what no preference (nil) means.
     static let automatic = "auto"
+    /// Microphone preference meaning "always follow macOS's default input".
+    static let systemDefault = "system"
 
-    /// The microphone to record from for a stored preference: nil = system default, `automatic`, or a device UID.
+    /// The microphone to record from for a stored preference: nil/`automatic`, `systemDefault`, or a device UID.
     /// A chosen device that isn't connected falls back to the system default.
     static func resolve(preference: String?) -> Device? {
         switch preference {
-        case nil: return defaultInput
-        case automatic?: return inputs().first(where: \.isHeadset) ?? defaultInput
+        case nil, automatic?: return inputs().first(where: \.isHeadset) ?? defaultInput
+        case systemDefault?: return defaultInput
         case let uid?: return device(uid: uid) ?? defaultInput
         }
     }

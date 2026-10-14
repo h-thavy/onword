@@ -634,12 +634,12 @@ struct ConnectCalendarCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Connect Google Calendar").font(Theme.sans(13.5, .semibold))
+            Text(google.isConfigured ? "Connect Google Calendar" : "Connect your calendar").font(Theme.sans(13.5, .semibold))
             Text("See upcoming meetings, join and take notes in one click, and get notes named after the event.")
                 .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
-                Button {
+                if google.isConfigured { Button {
                     google.connect()
                 } label: {
                     HStack(spacing: 6) {
@@ -648,13 +648,16 @@ struct ConnectCalendarCard: View {
                     }
                 }
                 .buttonStyle(.pill)
-                .disabled(!google.isConfigured || google.isConnecting)
+                .disabled(google.isConnecting) }
                 Button("Use Mac Calendar") { CalendarService.shared.requestAccess() }
-                    .buttonStyle(.plain).font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+                    .buttonStyle(google.isConfigured ? PillButtonStyle(prominent: false) : PillButtonStyle())
             }
             if !google.isConfigured {
-                Text("This build has no Google sign-in configured (Resources/GoogleOAuth.plist).")
-                    .font(Theme.sans(11.5)).foregroundStyle(.orange)
+                Text("To see Google Calendar: add your Google account in System Settings → Internet Accounts (Calendars on), then click Use Mac Calendar.")
+                    .font(Theme.sans(11.5)).foregroundStyle(Theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Internet Accounts") { CalendarService.openInternetAccounts() }
+                    .buttonStyle(.plain).font(Theme.sans(11.5, .semibold))
             } else if let error = google.lastError {
                 Text(error).font(Theme.sans(11.5)).foregroundStyle(.orange)
             }

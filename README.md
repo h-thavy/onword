@@ -12,7 +12,7 @@ Everything runs **on your Mac**: no account, no API key, no subscription. Nothin
 curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash
 ```
 
-This downloads the latest release, checks its checksum, installs **Onword.app** in `/Applications` (or `~/Applications` if `/Applications` isn't writable), and opens it. A short setup then walks you through permissions, a microphone test, your shortcut and a practice dictation.
+This downloads the latest release, checks its checksum, installs **Onword.app** in `/Applications` (or `~/Applications` if `/Applications` isn't writable), and opens it. A short setup then walks you through permissions, tests your shortcut on an on-screen keyboard, and lets you practice hold-to-talk and hands-free dictation.
 
 Run the same command again to **update**. To **uninstall**:
 ```bash
@@ -46,9 +46,13 @@ Records calls **without a bot joining**: your microphone and your Mac's audio ou
 - **Who said what:** you are **Me**, and the other side is split into speakers on-device. With Meet, Teams, Slack or Zoom, speakers get **real names** from the call app's "active speaker" highlight. Rename a speaker by clicking them; give two speakers the same name to merge them.
 - **Summary, decisions and action items**, written on-device by Apple Intelligence (macOS 26). An action item is kept only if the transcript supports it.
 - **Export:** Copy as Markdown, or export a `.md` file.
+- **Calendar:** the Notetaker lists your upcoming meetings with a **Join & Record** button, reminds you when one starts, and names the recording and speakers after the event and its guests. To include **Google Calendar**, add your Google account in System Settings → Internet Accounts (with Calendars on), then click **Use Mac Calendar** in Notetaker or Settings → Connections. iCloud, Outlook and Exchange calendars work the same way.
 
 ### Scratchpad (⌃⌥S)
 Quick notes you can type or dictate into, with search and pinning.
+
+### Microphone
+By default Onword uses **Automatic**: your AirPods or another Bluetooth/USB headset when one is connected, otherwise the Mac's microphone, and it switches mid-recording when you connect or disconnect one. You can pick a fixed microphone in Settings → General.
 
 ### Dictionary & Snippets
 - **Dictionary:** names and jargon to spell your way, plus corrections for words Onword keeps mishearing ("flow light" → "Onword").
@@ -70,6 +74,7 @@ The setup asks for these; you can review them later in **Settings → System**.
 | Accessibility | To put text where your cursor is and read the text around it (used only on this Mac) |
 | Input Monitoring | To notice your shortcut while other apps are in front |
 | System Audio Recording | Only when you use Notetaker, to record the other side of the call |
+| Calendars | Optional, only if you connect your calendar |
 
 Release builds aren't signed with an Apple Developer ID. Because of that, macOS may ask you to grant Accessibility and Input Monitoring again **after updating**: in System Settings → Privacy & Security, remove Onword with **–** and add it again.
 
