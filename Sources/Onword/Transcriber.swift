@@ -202,6 +202,23 @@ actor Transcriber {
     /// Long-form transcription for meetings: keeps segment and word timestamps so speakers can be attached.
     /// Splits on silence (VAD) and decodes chunks in parallel.
     ///
+    /// Which of `languages` is spoken: Whisper's language probabilities, limited to the ones you picked
+    /// (otherwise it chooses from all 99, and Khmer audio can come out as another script). Looks at up to
+    /// `windows` 30-second stretches spread over the audio. Nil when there's nothing to choose.
+    func detectLanguage(_ samples: [Float], among languages: [String], windows: Int = 1) async -> String? {
+        guard languages.count >= 2, let kit, let loadedModel, !loadedModel.isEnglishOnly, !samples.isEmpty else { return nil }
+        let window = 16_000 * 30
+        let count = max(1, min(windows, samples.count / window))
+        var scores: [String: Double] = [:]
+        for i in 0..<count {
+            let start = count == 1 ? 0 : (samples.count - window) * i / max(1, count - 1)
+            let slice = Array(samples[max(0, start)..<min(samples.count, start + window)])
+            guard let result = try? await kit.detectLangauge(audioArray: slice) else { continue }
+            for code in languages { scores[code, default: 0] += exp(Double(result.langProbs[code] ?? -100)) }
+        }
+        return languages.max { (scores[$0] ?? 0) < (scores[$1] ?? 0) }
+    }
+
     /// Whisper's own 30-second windows in order (each window continues from the last), not silence-split
     /// chunks: in testing, a quiet chunk with speech in it could come back empty, losing whole sentences.
     ///

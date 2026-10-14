@@ -95,6 +95,16 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(corrector.correct("for the camper release"), "for the camper release")
     }
 
+    func testScriptFilterDropsPhoneticGarbage() {
+        let text = "Watch out. Watch out. Ḍʃʃʀ ḍʃʀ ʀᴀᴀʀ ʔʀʔᵇʀ \u{FFFD}"
+        XCTAssertEqual(ScriptFilter.clean(text, languages: ["en", "km"]), "Watch out. Watch out.")
+        // Khmer is kept when it's one of your languages, dropped when it isn't.
+        XCTAssertEqual(ScriptFilter.clean("សួស្តី hello", languages: ["en", "km"]), "សួស្តី hello")
+        XCTAssertEqual(ScriptFilter.clean("សួស្តី hello", languages: ["en"]), "hello")
+        // Accented Latin always stays.
+        XCTAssertEqual(ScriptFilter.clean("Xin chào, ça va? Ngày mai", languages: ["vi"]), "Xin chào, ça va? Ngày mai")
+    }
+
     func testRemoveEchoMatchesGarbledWords() {
         let others = [seg(36, 40, "s2", "Could we move the analytics dashboard to next sprint, then?")]
         let me = [seg(36, 39, "me", "Did we need the analytic dashboard to make it print, then?")]

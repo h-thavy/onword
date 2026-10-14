@@ -132,7 +132,8 @@ final class MeetingRecorder: ObservableObject {
         let controller = DictationController.shared
         live.speakerAt = { [weak speakerPoller] t in speakerPoller?.speaker(at: t) }
         live.onUpdate = { [weak self] segments in self?.liveSegments = segments }
-        live.start(model: controller.model, language: controller.language == "auto" ? nil : controller.language)
+        live.start(model: controller.model, language: controller.language == "auto" ? nil : controller.language,
+                   languages: controller.selectedLanguages)
 
         currentID = meeting.id
         MeetingStore.shared.save(meeting)
@@ -250,7 +251,8 @@ final class MeetingRecorder: ObservableObject {
             do {
                 let (segments, names) = try await MeetingProcessor.shared.process(
                     micURL: meeting.micURL, systemURL: meeting.systemURL, speakersURL: meeting.speakersURL,
-                    model: model, fallback: fallback, language: language, replacements: replacements,
+                    model: model, fallback: fallback, language: language, languages: controller.selectedLanguages,
+                    replacements: replacements,
                     otherPeople: (meeting.attendees?.count).flatMap { $0 > 0 ? $0 : nil }, names: names
                 ) { message in
                     await MainActor.run { MeetingStore.shared.update(id) { $0.statusDetail = message } }

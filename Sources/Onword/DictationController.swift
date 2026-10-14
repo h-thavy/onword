@@ -585,7 +585,11 @@ final class DictationController: ObservableObject {
             let started = Date()
             defer { state = .idle }
             do {
-                let raw = try await transcriber.transcribe(samples, language: language, prompt: dictionary.whisperPrompt())
+                let spoken: String? = if language == nil {
+                    await transcriber.detectLanguage(samples, among: selectedLanguages)
+                } else { language }
+                let raw = ScriptFilter.clean(try await transcriber.transcribe(samples, language: spoken, prompt: dictionary.whisperPrompt()),
+                                             languages: selectedLanguages)
                 if seconds < 3, TextCleaner.isLikelyHallucination(raw) { lastHeardNothing = Date(); return }
                 if let practiceSink {
                     let text = cleaner.clean(raw, before: "", after: "")

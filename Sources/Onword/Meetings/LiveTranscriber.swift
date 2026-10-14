@@ -44,11 +44,14 @@ final class LiveTranscriber {
     private var timer: Timer?
     private var model: Transcriber.Model = .smallEnglish
     private var language: String?
+    /// Your languages, when there are several: each chunk is transcribed in the one most likely spoken.
+    private var languages: [String] = []
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "live")
 
-    func start(model: Transcriber.Model, language: String?) {
+    func start(model: Transcriber.Model, language: String?, languages: [String] = []) {
         self.model = model
         self.language = language
+        self.languages = languages
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.collect() }
         }
@@ -71,7 +74,7 @@ final class LiveTranscriber {
         let job = queue.removeFirst()
         guard Resampler.rms(job.samples) >= 0.003 else { return processNext() }
         busy = true
-        let model = model, language = language
+        let model = model, language = language, languages = languages
         Task {
             defer {
                 busy = false
@@ -80,7 +83,10 @@ final class LiveTranscriber {
             do {
                 let transcriber = MeetingProcessor.transcriber
                 try await transcriber.load(model, downloadBase: AppPaths.models)
-                let results = try await transcriber.transcribeLong(job.samples, language: language)
+                let spoken: String? = if language == nil {
+                    await transcriber.detectLanguage(job.samples, among: languages)
+                } else { language }
+                let results = try await transcriber.transcribeLong(job.samples, language: spoken)
                 add(results.flatMap(\.segments).map {
                     TranscriptSegment(start: job.start + Double($0.start), end: job.start + Double($0.end),
                                       speaker: job.track, text: $0.text)
@@ -96,7 +102,7 @@ final class LiveTranscriber {
         var batch = TranscriptMerger.dropHallucinations(new)
             .map { segment -> TranscriptSegment in
                 var s = segment
-                s.text = cleaner.clean(s.text)
+                s.text = cleaner.clean(ScriptFilter.clean(s.text, languages: languages))
                 if s.speaker == "them" { s.speaker = speakerAt?((s.start + s.end) / 2) ?? "Them" } else { s.speaker = "You" }
                 return s
             }

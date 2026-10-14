@@ -23,6 +23,7 @@ actor MeetingProcessor {
     private var expectedOthers: Int?
     /// Attendees and dictionary words, to correct misheard names.
     private var knownNames: [String] = []
+    private var yourLanguages: [String] = []
 
     /// Below this loudness a track is treated as silent.
     private let silenceRMS: Float = 0.003
@@ -30,11 +31,12 @@ actor MeetingProcessor {
     /// Returns the transcript and names for diarized speakers read from the call app ("s1" → "Samantha").
     /// - Parameter otherPeople: how many others the calendar invited (an upper bound for the voices on the call).
     func process(micURL: URL, systemURL: URL, speakersURL: URL, model: Transcriber.Model, fallback: Transcriber.Model? = nil,
-                 language: String?,
+                 language: String?, languages: [String] = [],
                  replacements: [String: String], otherPeople: Int? = nil, names: [String] = [],
                  progress: @Sendable (String) async -> Void) async throws -> ([TranscriptSegment], [String: String]) {
         expectedOthers = otherPeople
         knownNames = names
+        yourLanguages = languages
         let segments = try await transcribe(micURL: micURL, systemURL: systemURL, model: model, fallback: fallback, language: language,
                                             replacements: replacements, progress: progress)
         let observations = Self.loadObservations(speakersURL)
@@ -69,16 +71,24 @@ actor MeetingProcessor {
             try await transcriber.load(fallback, downloadBase: AppPaths.models)
         }
 
+        // Each side in the language it's mostly spoken in, from your languages (you might speak Khmer while
+        // the call is in English).
+        let systemLanguage = language == nil ? await transcriber.detectLanguage(system, among: yourLanguages, windows: 3) : language
+        let micLanguage = language == nil ? await transcriber.detectLanguage(mic, among: yourLanguages, windows: 3) : language
+        if language == nil, !yourLanguages.isEmpty {
+            log.notice("Languages: mic \(micLanguage ?? "auto", privacy: .public), call \(systemLanguage ?? "auto", privacy: .public)")
+        }
+
         if systemHasSpeech {
             await progress("Transcribing the other speakers…")
-            let others = withoutHallucinations(try await transcriber.transcribeLong(system, language: language))
+            let others = withoutHallucinations(try await transcriber.transcribeLong(system, language: systemLanguage))
             await progress("Identifying speakers…")
             let tagged = try await diarize(system, transcription: others)
 
             var mine: [TranscriptSegment] = []
             if micHasSpeech {
                 await progress("Transcribing your microphone…")
-                mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: language)), speaker: "me")
+                mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage)), speaker: "me")
                 let before = mine.count
                 // The call leaking from the speakers: a faint copy of the call audio, or mostly the same words.
                 mine = mine.filter { !EchoDetector.isEcho(mic: mic, system: system, start: $0.start, end: $0.end) }
@@ -93,7 +103,7 @@ actor MeetingProcessor {
         guard micHasSpeech else { return [] }
         // In-person meeting: everyone is on the microphone, so diarize that.
         await progress("Transcribing…")
-        let all = withoutHallucinations(try await transcriber.transcribeLong(mic, language: language))
+        let all = withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage))
         await progress("Identifying speakers…")
         return applyDictionary(TranscriptMerger.merge([try await diarize(mic, transcription: all)]), replacements)
     }
@@ -106,7 +116,7 @@ actor MeetingProcessor {
             NSSpellChecker.shared.checkSpelling(of: word, startingAt: 0).location == NSNotFound
         }
         return segments
-            .map { var s = $0; s.text = corrector.correct(cleaner.clean(s.text)); return s }
+            .map { var s = $0; s.text = corrector.correct(cleaner.clean(ScriptFilter.clean(s.text, languages: yourLanguages))); return s }
             .filter { !$0.text.isEmpty }
     }
 
