@@ -96,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CalendarService.shared.start()
             NotetakerFlow.shared.runTestHooks()
             MeetingAudio.compressOldRecordings()
+            DictationController.shared.downloadKhmerModelIfNeeded()
             if let folder = ProcessInfo.processInfo.environment["ONWORD_TEST_MEETING"] {
                 MeetingRecorder.shared.importForTesting(from: URL(fileURLWithPath: folder))
                 WindowManager.shared.show(.notetaker)

@@ -6,6 +6,10 @@ import Foundation
 public enum ScriptFilter {
     public static func clean(_ text: String, languages: [String]) -> String {
         guard !text.isEmpty else { return text }
+        // No languages picked (auto-detect): any script can be right; only broken characters go.
+        guard !languages.isEmpty else {
+            return text.replacingOccurrences(of: "\u{FFFD}", with: "").trimmingCharacters(in: .whitespaces)
+        }
         let allowed = Set(languages.flatMap { scripts[$0] ?? [] })
         let words = text.replacingOccurrences(of: "\u{FFFD}", with: "").split(separator: " ", omittingEmptySubsequences: true)
         let kept = words.filter { word in

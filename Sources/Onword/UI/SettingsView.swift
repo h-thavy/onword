@@ -558,6 +558,7 @@ extension Transcriber.Model {
         case .largeTurbo: "Large v3 Turbo"
         case .base: "Base"
         case .small: "Small"
+        case .khmer: "Khmer"
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import OnwordCore
 import os
+import WhisperKit
 
 /// Audio waiting to be transcribed live, filled from an audio thread.
 final class LiveTrackBuffer: @unchecked Sendable {
@@ -86,7 +87,15 @@ final class LiveTranscriber {
                 let spoken: String? = if language == nil {
                     await transcriber.detectLanguage(job.samples, among: languages)
                 } else { language }
-                let results = try await transcriber.transcribeLong(job.samples, language: spoken)
+                // Khmer goes to the Khmer model once it's on this Mac (the meeting downloads it, not the live view).
+                let results: [TranscriptionResult]
+                if spoken == "km", Transcriber.localFolder(for: .khmer, downloadBase: AppPaths.models) != nil {
+                    let khmer = MeetingProcessor.khmerTranscriber
+                    try await khmer.load(.khmer, downloadBase: AppPaths.models)
+                    results = try await khmer.transcribeSpeech(job.samples, language: "km")
+                } else {
+                    results = try await transcriber.transcribeLong(job.samples, language: spoken)
+                }
                 add(results.flatMap(\.segments).map {
                     TranscriptSegment(start: job.start + Double($0.start), end: job.start + Double($0.end),
                                       speaker: job.track, text: $0.text)

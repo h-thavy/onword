@@ -101,6 +101,8 @@ final class TranscriptTests: XCTestCase {
         // Khmer is kept when it's one of your languages, dropped when it isn't.
         XCTAssertEqual(ScriptFilter.clean("សួស្តី hello", languages: ["en", "km"]), "សួស្តី hello")
         XCTAssertEqual(ScriptFilter.clean("សួស្តី hello", languages: ["en"]), "hello")
+        // With no languages picked, nothing is filtered but broken characters.
+        XCTAssertEqual(ScriptFilter.clean("今日は hello \u{FFFD}", languages: []), "今日は hello")
         // Accented Latin always stays.
         XCTAssertEqual(ScriptFilter.clean("Xin chào, ça va? Ngày mai", languages: ["vi"]), "Xin chào, ça va? Ngày mai")
     }
@@ -111,6 +113,23 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(TranscriptMerger.join("ជួបគ្នា", "ថ្ងៃស្អែក។"), "ជួបគ្នាថ្ងៃស្អែក។")
         XCTAssertEqual(TranscriptMerger.tidySpacing("皆さん、 おはようございます。 今日は Onword の話"), "皆さん、おはようございます。今日はOnwordの話")
         XCTAssertEqual(TranscriptMerger.tidySpacing("Hello there, friend"), "Hello there, friend")
+    }
+
+    func testSpeechSpansSkipSilenceAndCapLength() {
+        let rate = 16_000
+        func tone(_ seconds: Double) -> [Float] { (0..<Int(seconds * Double(rate))).map { Float(sin(Double($0) * 0.1)) * 0.3 } }
+        func quiet(_ seconds: Double) -> [Float] { Array(repeating: 0.0005, count: Int(seconds * Double(rate))) }
+        // 2 s speech, 5 s silence, 3 s speech (with a 0.3 s pause bridged), 4 s silence.
+        let audio = quiet(1) + tone(2) + quiet(5) + tone(1.5) + quiet(0.3) + tone(1.5) + quiet(4)
+        let spans = SpeechSpans.find(audio)
+        XCTAssertEqual(spans.count, 2)
+        XCTAssertEqual(Double(spans[0].lowerBound) / 16_000, 0.8, accuracy: 0.05)
+        XCTAssertEqual(Double(spans[1].count) / 16_000, 3.7, accuracy: 0.1)
+        // 70 s without a pause is split into pieces of at most 28 s.
+        let long = SpeechSpans.find(tone(70))
+        XCTAssertGreaterThanOrEqual(long.count, 3)
+        XCTAssertTrue(long.allSatisfy { $0.count <= 28 * rate })
+        XCTAssertEqual(long.map(\.count).reduce(0, +), long.last!.upperBound - long.first!.lowerBound)
     }
 
     func testDropsVideoOutrosAtAnyLength() {

@@ -17,6 +17,8 @@ actor MeetingProcessor {
     static let shared = MeetingProcessor()
     /// One Whisper instance for meetings (live and final), separate from dictation's so neither waits.
     static let transcriber = Transcriber()
+    /// The Khmer model, for tracks spoken in Khmer.
+    static let khmerTranscriber = Transcriber()
 
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
     private var speakerKit: SpeakerKit?
@@ -87,14 +89,14 @@ actor MeetingProcessor {
 
         if systemHasSpeech {
             await progress("Transcribing the other speakers…")
-            let others = withoutHallucinations(try await transcriber.transcribeLong(system, language: systemLanguage), seconds: Double(system.count) / 16_000)
+            let others = withoutHallucinations(try await transcribeTrack(system, language: systemLanguage, progress: progress), seconds: Double(system.count) / 16_000)
             await progress("Identifying speakers…")
             let tagged = try await diarize(system, transcription: others)
 
             var mine: [TranscriptSegment] = []
             if micHasSpeech {
                 await progress("Transcribing your microphone…")
-                mine = segments(from: withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage), seconds: Double(mic.count) / 16_000), speaker: "me")
+                mine = segments(from: withoutHallucinations(try await transcribeTrack(mic, language: micLanguage, progress: progress), seconds: Double(mic.count) / 16_000), speaker: "me")
                 let before = mine.count
                 // The call leaking from the speakers: a faint copy of the call audio, or mostly the same words.
                 mine = mine.filter { !EchoDetector.isEcho(mic: mic, system: system, start: $0.start, end: $0.end) }
@@ -109,9 +111,28 @@ actor MeetingProcessor {
         guard micHasSpeech else { return [] }
         // In-person meeting: everyone is on the microphone, so diarize that.
         await progress("Transcribing…")
-        let all = withoutHallucinations(try await transcriber.transcribeLong(mic, language: micLanguage), seconds: Double(mic.count) / 16_000)
+        let all = withoutHallucinations(try await transcribeTrack(mic, language: micLanguage, progress: progress), seconds: Double(mic.count) / 16_000)
         await progress("Identifying speakers…")
         return applyDictionary(TranscriptMerger.merge([try await diarize(mic, transcription: all)]), replacements)
+    }
+
+    /// One track with the meeting model, or with the Khmer model when it's in Khmer (downloaded the first time;
+    /// if that fails, the meeting model does its best).
+    private func transcribeTrack(_ samples: [Float], language: String?,
+                                 progress: @Sendable (String) async -> Void) async throws -> [TranscriptionResult] {
+        if language == "km" {
+            let khmer = Self.khmerTranscriber
+            do {
+                if Transcriber.localFolder(for: .khmer, downloadBase: AppPaths.models) == nil {
+                    await progress("Downloading the Khmer speech model…")
+                }
+                try await khmer.load(.khmer, downloadBase: AppPaths.models)
+                return try await khmer.transcribeSpeech(samples, language: "km")
+            } catch {
+                log.error("Khmer model unavailable (\(error.localizedDescription, privacy: .public)); using the meeting model")
+            }
+        }
+        return try await Self.transcriber.transcribeLong(samples, language: language)
     }
 
     /// Final pass: strips Whisper artifacts like "[BLANK_AUDIO]" and applies dictionary replacements

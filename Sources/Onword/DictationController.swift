@@ -109,6 +109,20 @@ final class DictationController: ObservableObject {
     func chooseLanguages(_ codes: [String]) {
         selectedLanguages = codes
         chooseLanguage(codes.count == 1 ? codes[0] : "auto")
+        downloadKhmerModelIfNeeded()
+    }
+
+    /// Khmer needs its own model (the standard ones can't write it); fetched in the background once Khmer is
+    /// one of your languages.
+    func downloadKhmerModelIfNeeded() {
+        guard selectedLanguages.contains("km") || language == "km",
+              Transcriber.localFolder(for: .khmer, downloadBase: AppPaths.models) == nil else { return }
+        Task.detached(priority: .utility) {
+            do { _ = try await Transcriber.download(.khmer, downloadBase: AppPaths.models) } catch {
+                Logger(subsystem: "io.github.h-thavy.onword", category: "dictation")
+                    .error("Khmer model download failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// The language dictation uses now ("en" with an English-only model).
@@ -588,8 +602,15 @@ final class DictationController: ObservableObject {
                 let spoken: String? = if language == nil {
                     await transcriber.detectLanguage(samples, among: selectedLanguages)
                 } else { language }
-                let raw = ScriptFilter.clean(try await transcriber.transcribe(samples, language: spoken, prompt: dictionary.whisperPrompt()),
-                                             languages: selectedLanguages)
+                let heard: String
+                if spoken == "km", Transcriber.localFolder(for: .khmer, downloadBase: AppPaths.models) != nil {
+                    let khmer = MeetingProcessor.khmerTranscriber
+                    try await khmer.load(.khmer, downloadBase: AppPaths.models)
+                    heard = try await khmer.transcribeSpeech(samples, language: "km").flatMap(\.segments).map(\.text).joined()
+                } else {
+                    heard = try await transcriber.transcribe(samples, language: spoken, prompt: dictionary.whisperPrompt())
+                }
+                let raw = ScriptFilter.clean(heard, languages: selectedLanguages)
                 if seconds < 3, TextCleaner.isLikelyHallucination(raw) { lastHeardNothing = Date(); return }
                 if let practiceSink {
                     let text = cleaner.clean(raw, before: "", after: "")

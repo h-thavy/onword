@@ -133,6 +133,6 @@ swift test                # unit tests for the core logic
 
 ## Credits
 
-Built with [WhisperKit and SpeakerKit](https://github.com/argmaxinc/WhisperKit) by Argmax (MIT), and the [EB Garamond](https://fonts.google.com/specimen/EB+Garamond) and [Figtree](https://fonts.google.com/specimen/Figtree) fonts (SIL Open Font License). Inspired by voice-dictation apps such as Wispr Flow — Onword is an independent project, not affiliated with or endorsed by Wispr.
+Built with [WhisperKit and SpeakerKit](https://github.com/argmaxinc/WhisperKit) by Argmax (MIT); Khmer speech uses [kasekor-asr](https://huggingface.co/Hongleng/kasekor-asr-v0.0) by Hongleng (Apache-2.0, a fine-tune of OpenAI's Whisper Small), converted for WhisperKit and downloaded only when Khmer is one of your languages; and the [EB Garamond](https://fonts.google.com/specimen/EB+Garamond) and [Figtree](https://fonts.google.com/specimen/Figtree) fonts (SIL Open Font License). Inspired by voice-dictation apps such as Wispr Flow — Onword is an independent project, not affiliated with or endorsed by Wispr.
 
 [MIT License](LICENSE)
