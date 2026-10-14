@@ -12,7 +12,7 @@ enum Onboarding {
 
 struct OnboardingView: View {
     enum Step: Int, CaseIterable {
-        case welcome, permissions, microphone, shortcut, tryIt, done
+        case welcome, permissions, holdToTalk, handsFree, done
     }
 
     @State private var step: Step = .welcome
@@ -25,9 +25,8 @@ struct OnboardingView: View {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
                 case .permissions: PermissionsStep(next: next)
-                case .microphone: MicrophoneStep(next: next)
-                case .shortcut: ShortcutStep(next: next)
-                case .tryIt: TryItStep(next: next)
+                case .holdToTalk: HoldToTalkStep(next: next)
+                case .handsFree: HandsFreeStep(next: next)
                 case .done: DoneStep()
                 }
             }
@@ -74,9 +73,10 @@ private struct StepHeader: View {
                 .font(Theme.serif(38))
                 .multilineTextAlignment(.center)
             Text(message).font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
-                .multilineTextAlignment(.center).frame(maxWidth: 520)
+                .multilineTextAlignment(.center).frame(maxWidth: 540)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 34)
+        .padding(.top, 22)
     }
 }
 
@@ -164,205 +164,177 @@ private struct PermissionsStep: View {
     }
 }
 
-/// Live level meter on the chosen microphone; turns green once it clearly hears speech.
-private struct MicrophoneStep: View {
-    let next: () -> Void
+// MARK: - Practice
+
+/// Shows the dictation shortcut, with a small menu to switch keys.
+private struct ShortcutLine: View {
     @ObservedObject private var dictation = DictationController.shared
-    @State private var recorder = AudioRecorder()
-    @State private var level: Float = 0
-    @State private var heardSpeech: Double = 0     // seconds of speech-level audio heard
-    @State private var error: String?
-    private let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
-
-    private var heard: Bool { heardSpeech >= 1.0 }
 
     var body: some View {
-        VStack(spacing: 22) {
-            StepHeader(title: "Let’s test your ", italic: "microphone",
-                       message: "Say a few words at your normal volume — like “testing, one, two, three”.")
-            VStack(spacing: 18) {
-                HStack {
-                    Text("Microphone").font(Theme.sans(14, .medium))
-                    Spacer()
-                    Picker("", selection: Binding(get: { dictation.microphoneUID }, set: { uid in
-                        dictation.microphoneUID = uid
-                        restart()
-                    })) {
-                        Text("System default (\(AudioDevices.defaultInput?.name ?? "none"))").tag(String?.none)
-                        ForEach(AudioDevices.inputs()) { device in Text(device.name).tag(Optional(device.uid)) }
-                    }
-                    .labelsHidden().frame(maxWidth: 300)
-                }
-                Meter(level: level, heard: heard)
-                HStack(spacing: 8) {
-                    if heard {
-                        Label("We can hear you", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
-                    } else if let error {
-                        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-                    } else {
-                        Text("Listening…").foregroundStyle(Theme.inkTertiary)
-                    }
-                    Spacer()
-                }
-                .font(Theme.sans(13.5, .semibold))
-                if active?.isBluetooth == true {
-                    Text("Bluetooth mics like AirPods switch to call-quality audio while recording and can miss your first word. Your Mac’s built-in mic is usually more reliable.")
-                        .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
-                }
-            }
-            .padding(22)
-            .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium).strokeBorder(Theme.border))
-            .frame(maxWidth: 560)
-            Spacer()
-            StepFooter(title: heard ? "Sounds good" : "Skip for now") {
-                _ = recorder.stop()
-                next()
-            }
-        }
-        .onAppear(perform: start)
-        .onDisappear { _ = recorder.stop() }
-        .onReceive(timer) { _ in
-            level = recorder.level
-            if level > 0.12 { heardSpeech += 0.05 }
-        }
-    }
-
-    private var active: AudioDevices.Device? {
-        dictation.microphoneUID.flatMap { AudioDevices.device(uid: $0) } ?? AudioDevices.defaultInput
-    }
-
-    private func start() {
-        recorder.keepsSamples = false
-        do {
-            try recorder.start()
-            error = nil
-        } catch {
-            self.error = Permissions.microphone ? error.localizedDescription : "Allow microphone access first."
-        }
-    }
-
-    private func restart() {
-        _ = recorder.stop()
-        heardSpeech = 0
-        start()
-    }
-}
-
-private struct Meter: View {
-    let level: Float
-    let heard: Bool
-    private let bars = 28
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<bars, id: \.self) { i in
-                let lit = Float(i) / Float(bars) < min(1, level * 0.9)
-                Capsule()
-                    .fill(lit ? (heard ? Color(red: 0.25, green: 0.55, blue: 0.35) : Theme.ink) : Theme.selected)
-                    .frame(height: 26)
-            }
-        }
-        .animation(.easeOut(duration: 0.06), value: level)
-    }
-}
-
-private struct ShortcutStep: View {
-    let next: () -> Void
-    @ObservedObject private var dictation = DictationController.shared
-    @State private var shownAt = Date()
-
-    private var detected: Bool { (dictation.lastHotkeyPress ?? .distantPast) > shownAt }
-
-    var body: some View {
-        VStack(spacing: 22) {
-            StepHeader(title: "Your dictation ", italic: "shortcut",
-                       message: "Hold it and talk, let go and the text appears. Double-tap it for hands-free.")
-            VStack(spacing: 10) {
+        HStack(spacing: 6) {
+            Text("Your shortcut").foregroundStyle(Theme.inkTertiary)
+            KeyChip(text: dictation.hotkey.chip)
+            Menu {
                 ForEach(HotkeyMonitor.Key.allCases) { key in
-                    Button {
+                    Button(key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : "")) {
                         dictation.hotkey = key
-                        shownAt = Date()
-                    } label: {
-                        HStack {
-                            Image(systemName: dictation.hotkey == key ? "largecircle.fill.circle" : "circle")
-                            Text(key.title).font(Theme.sans(14.5, .medium))
-                            Spacer()
-                            if key == .fn, GlobeKey.conflict != nil {
-                                Text("conflicts with your 🌐 key").font(Theme.sans(12)).foregroundStyle(.orange)
-                            }
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium)
-                            .fill(dictation.hotkey == key ? Theme.selected : Theme.card))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium).strokeBorder(Theme.border))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                HStack(spacing: 6) {
-                    if detected {
-                        Label("Detected — that’s your key", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
-                    } else {
-                        Text("Press").foregroundStyle(Theme.inkTertiary)
-                        KeyChip(text: dictation.hotkey.chip)
-                        Text("once to check it works.").foregroundStyle(Theme.inkTertiary)
-                    }
-                    Spacer()
-                    if dictation.hotkey == .fn, GlobeKey.conflict != nil {
-                        Button("Fix 🌐 key") { GlobeKey.openKeyboardSettings() }.buttonStyle(.pillQuiet)
                     }
                 }
-                .font(Theme.sans(13.5, .semibold))
-                .padding(.top, 4)
-            }
-            .frame(maxWidth: 560)
-            Spacer()
-            StepFooter(title: detected ? "Continue" : "Continue anyway", action: next)
+            } label: { Text("Change").font(Theme.sans(12.5, .semibold)) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         }
-        .onAppear { shownAt = Date() }
+        .font(Theme.sans(12.5))
     }
 }
 
-/// A practice box: dictation inserts straight into it.
-private struct TryItStep: View {
+/// A mock app window (email, AI chat) with a text box you dictate into.
+private struct MockApp<Header: View>: View {
+    @Binding var text: String
+    let placeholder: String
+    let listening: Bool
+    @ViewBuilder var header: () -> Header
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header()
+            Divider().overlay(Theme.border)
+            PlainTextEditor(text: $text, font: NSFont(name: "Figtree", size: 16) ?? .systemFont(ofSize: 16),
+                            placeholder: placeholder, documentID: placeholder)
+                .frame(height: 96)
+        }
+        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium)
+            .strokeBorder(listening ? Theme.ink : Theme.border, lineWidth: listening ? 2 : 1))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
+        .frame(maxWidth: 600)
+    }
+}
+
+/// Live status under a practice box: listening, writing, a hint, or success.
+private struct PracticeStatus: View {
+    let success: String?
+    let hint: String?
+    @ObservedObject private var dictation = DictationController.shared
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch dictation.state {
+            case .recording:
+                Label(dictation.isHandsFree ? "Listening hands-free — press the key again to finish" : "Listening… let go when you're done",
+                      systemImage: "waveform")
+            case .transcribing:
+                Label("Writing…", systemImage: "ellipsis")
+            case .loadingModel:
+                ProgressView().controlSize(.small)
+                Text(dictation.modelStatus).foregroundStyle(Theme.inkTertiary)
+            case .needsPermissions:
+                Label("Onword needs its permissions first — go back one step.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            default:
+                if let success {
+                    Label(success, systemImage: "checkmark.circle.fill").foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
+                } else if let hint {
+                    Label(hint, systemImage: "hand.raised").foregroundStyle(.orange)
+                }
+            }
+        }
+        .font(Theme.sans(13.5, .semibold))
+        .frame(height: 22)
+    }
+}
+
+/// Practice 1: hold the key, speak, let go — in a mock email.
+private struct HoldToTalkStep: View {
     let next: () -> Void
     @ObservedObject private var dictation = DictationController.shared
     @State private var text = ""
+    @State private var shownAt = Date()
+
+    private var done: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var tappedInstead: Bool { !done && (dictation.lastQuickTap ?? .distantPast) > shownAt }
 
     var body: some View {
         VStack(spacing: 18) {
-            StepHeader(title: "Now ", italic: "try it",
-                       message: "Click in the box, hold \(dictation.hotkey.title), and say: “Hi, I’m trying Onword for the first time. It’s pretty fast.”")
-            if dictation.state == .loadingModel {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(dictation.modelStatus).font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+            StepHeader(title: "Hold to ", italic: "talk",
+                       message: "Hold \(dictation.hotkey.title) down, read this out loud, then let go:")
+            Text("“Um, hi Dara, are you free on Friday at three? Scratch that. Are you free on Saturday morning?”")
+                .font(Theme.serif(19, italic: true)).multilineTextAlignment(.center).frame(maxWidth: 580)
+                .fixedSize(horizontal: false, vertical: true)
+            MockApp(text: $text, placeholder: "Hold \(dictation.hotkey.title), speak, and let go…",
+                    listening: dictation.state == .recording) {
+                VStack(spacing: 0) {
+                    mailField("To", "Dara")
+                    Divider().overlay(Theme.border)
+                    mailField("Subject", "Quick question")
                 }
             }
-            PlainTextEditor(text: $text, font: NSFont(name: "Figtree", size: 17) ?? .systemFont(ofSize: 17),
-                            placeholder: "Your words will appear here…", documentID: "try-it")
-                .frame(maxWidth: 600, maxHeight: 150)
-                .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.card))
-                .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium)
-                    .strokeBorder(dictation.state == .recording ? Theme.ink : Theme.border, lineWidth: dictation.state == .recording ? 2 : 1))
-            HStack(spacing: 6) {
-                switch dictation.state {
-                case .recording: Label("Listening…", systemImage: "waveform").foregroundStyle(Theme.ink)
-                case .transcribing: Label("Writing…", systemImage: "ellipsis").foregroundStyle(Theme.ink)
-                default:
-                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Label("That’s it — it works anywhere you can type.", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
-                    }
-                }
-            }
-            .font(Theme.sans(13.5, .semibold))
-            .frame(height: 20)
+            PracticeStatus(success: done ? "The “um” and Friday are gone — it works the same in any app." : nil,
+                           hint: tappedInstead ? "Don’t just tap — hold \(dictation.hotkey.title) down while you talk, then let go." : nil)
+            ShortcutLine()
+            Spacer(minLength: 0)
+            StepFooter(title: done ? "Next: hands-free" : "Skip", action: next)
+        }
+        .onAppear { shownAt = Date() }
+    }
+
+    private func mailField(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label).foregroundStyle(Theme.inkTertiary).frame(width: 56, alignment: .leading)
+            Text(value)
             Spacer()
-            StepFooter(title: text.isEmpty ? "Skip" : "Continue", action: next)
+        }
+        .font(Theme.sans(13.5))
+        .padding(.horizontal, 16).padding(.vertical, 9)
+    }
+}
+
+/// Practice 2: double-tap to start hands-free, press again to finish — in a mock AI chat box.
+private struct HandsFreeStep: View {
+    let next: () -> Void
+    @ObservedObject private var dictation = DictationController.shared
+    @State private var text = ""
+    @State private var shownAt = Date()
+
+    private var done: Bool {
+        (dictation.lastHandsFreeFinish ?? .distantPast) > shownAt && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            StepHeader(title: "Now go ", italic: "hands-free",
+                       message: "For longer thoughts, double-tap \(dictation.hotkey.title). Onword keeps listening until you press it once more.")
+            HStack(spacing: 10) {
+                step("1", "Double-tap")
+                Image(systemName: "arrow.right").foregroundStyle(Theme.inkTertiary)
+                step("2", "Talk freely")
+                Image(systemName: "arrow.right").foregroundStyle(Theme.inkTertiary)
+                step("3", "Press once to finish")
+            }
+            MockApp(text: $text, placeholder: "Brain-dump an idea or a prompt for your AI assistant…",
+                    listening: dictation.state == .recording) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles").foregroundStyle(Logo.accent)
+                    Text("Message your AI assistant").font(Theme.sans(13.5, .medium))
+                    Spacer()
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 18))
+                        .foregroundStyle(text.isEmpty ? Theme.inkTertiary : Theme.ink)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+            PracticeStatus(success: done ? "Hands-free works. Great for long messages and prompts." : nil,
+                           hint: !done && !text.isEmpty ? "That was hold-to-talk. Try a quick double-tap instead." : nil)
+            ShortcutLine()
+            Spacer(minLength: 0)
+            StepFooter(title: done ? "Finish" : "Skip", action: next)
+        }
+        .onAppear { shownAt = Date() }
+    }
+
+    private func step(_ number: String, _ label: String) -> some View {
+        HStack(spacing: 6) {
+            Text(number).font(Theme.sans(11, .bold)).foregroundStyle(Theme.onAccent)
+                .frame(width: 18, height: 18).background(Circle().fill(Theme.accent))
+            Text(label).font(Theme.sans(13, .medium))
         }
     }
 }

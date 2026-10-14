@@ -22,6 +22,10 @@ final class DictationController: ObservableObject {
     @Published private(set) var lastText: String?
     /// When the dictation shortcut was last pressed (setup shows "✓ Detected").
     @Published private(set) var lastHotkeyPress: Date?
+    /// When a too-short tap was ignored (setup reminds you to hold the key down).
+    @Published private(set) var lastQuickTap: Date?
+    /// When the last hands-free dictation finished (setup's hands-free practice).
+    @Published private(set) var lastHandsFreeFinish: Date?
     @Published private(set) var modelStatus = "Not loaded"
 
     @Published var hotkey: HotkeyMonitor.Key {
@@ -172,7 +176,9 @@ final class DictationController: ObservableObject {
         case .startRecording: beginRecording()
         case .finishRecording: finishRecording()
         // Not cancel(): the gesture must keep remembering this tap so a second tap can start hands-free.
-        case .discardRecording: discardRecording()
+        case .discardRecording:
+            lastQuickTap = Date()
+            discardRecording()
         case .enterHandsFree:
             isHandsFree = true
         case .ignore, nil: break
@@ -238,6 +244,7 @@ final class DictationController: ObservableObject {
 
     private func finishRecording() {
         guard state == .recording else { return }
+        let wasHandsFree = isHandsFree
         let samples = stopRecording()
         let seconds = Double(samples.count) / AudioRecorder.sampleRate
 
@@ -275,6 +282,7 @@ final class DictationController: ObservableObject {
                 if method == .copiedOnly { NSSound.beep() }
                 log.notice("Dictation: \(seconds, format: .fixed(precision: 1)) s audio → \(text.count) chars via \(method.rawValue, privacy: .public) into \(context.bundleID ?? "?", privacy: .public)")
                 lastText = text
+                if wasHandsFree { lastHandsFreeFinish = Date() }
                 History.append(HistoryEntry(
                     date: Date(), app: context.bundleID, raw: raw, text: text, seconds: seconds,
                     transcribeMs: Int(Date().timeIntervalSince(started) * 1000), method: method))
