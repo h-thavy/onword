@@ -63,6 +63,16 @@ final class WindowManager: NSObject, NSWindowDelegate {
         onboarding = nil
     }
 
+    /// After a permission is granted in System Settings, brings back the window its Allow button was
+    /// in: setup during first run, or the Hub when it was in Settings.
+    func bringForward(_ origin: Permissions.PendingRequest.Origin) {
+        NSApp.activate(ignoringOtherApps: true)
+        switch origin {
+        case .onboarding: onboarding?.makeKeyAndOrderFront(nil)
+        case .settings: hub?.makeKeyAndOrderFront(nil)
+        }
+    }
+
     /// Re-applies the Light/Dark/System choice to the Hub.
     func applyAppearance() {
         hub?.appearance = Appearance.current.nsAppearance

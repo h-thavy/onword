@@ -56,6 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Back from System Settings? Re-check permissions right away, not just on the poll, as Wispr does.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        MainActor.assumeIsolated { DictationController.shared.refreshPermissions() }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             DockIcon.apply()

@@ -303,14 +303,17 @@ final class DictationController: ObservableObject {
             permissionTimer = nil
             if state == .needsPermissions { state = .idle }
         }
+
+        // A permission granted in System Settings brings the asking window back and closes the pane Onword opened.
+        if let origin = Permissions.resolvePendingRequest() { WindowManager.shared.bringForward(origin) }
     }
 
     func requestPermissions() {
         Task {
-            _ = await Permissions.requestMicrophone()
-            if !Permissions.accessibility { Permissions.requestAccessibility() }
+            _ = await Permissions.requestMicrophone(from: .settings)
+            if !Permissions.accessibility { Permissions.requestAccessibility(from: .settings) }
             if !Permissions.inputMonitoring {
-                Permissions.requestInputMonitoring()
+                Permissions.requestInputMonitoring(from: .settings)
                 // Trying to create the tap is what makes macOS list the app under Input Monitoring.
                 hotkeyMonitor.start()
             }

@@ -425,14 +425,20 @@ private struct PermissionsStep: View {
             SettingsPreview(kind: current ?? .microphone, allowed: current == nil)
                 .padding(80)
         }
-        .onReceive(timer) { date in
-            now = date
-            mic = Permissions.microphone
-            accessibility = Permissions.accessibility
-            input = Permissions.inputMonitoring
-            if input, inputGrantedAt == nil { inputGrantedAt = date }
-            DictationController.shared.refreshPermissions()
+        .onReceive(timer) { date in refresh(at: date) }
+        // Back from System Settings? Re-check now rather than on the next timer tick, as Wispr does.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refresh(at: Date())
         }
+    }
+
+    private func refresh(at date: Date) {
+        now = date
+        mic = Permissions.microphone
+        accessibility = Permissions.accessibility
+        input = Permissions.inputMonitoring
+        if input, inputGrantedAt == nil { inputGrantedAt = date }
+        DictationController.shared.refreshPermissions()
     }
 
     private var allGranted: Bool { mic && accessibility && input }
@@ -479,9 +485,9 @@ private struct PermissionsStep: View {
 
     private func request(_ kind: Kind) {
         switch kind {
-        case .accessibility: Permissions.requestAccessibility()
-        case .microphone: Task { _ = await Permissions.requestMicrophone() }
-        case .inputMonitoring: Permissions.requestInputMonitoring()
+        case .accessibility: Permissions.requestAccessibility(from: .onboarding)
+        case .microphone: Task { _ = await Permissions.requestMicrophone(from: .onboarding) }
+        case .inputMonitoring: Permissions.requestInputMonitoring(from: .onboarding)
         }
     }
 

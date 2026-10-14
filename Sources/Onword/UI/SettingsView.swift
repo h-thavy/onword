@@ -222,13 +222,13 @@ struct SettingsView: View {
             }
             SettingsSection(title: "Permissions") {
                 permissionLine("Microphone", "To hear you.", Permissions.microphone) {
-                    Task { _ = await Permissions.requestMicrophone() }
+                    Task { _ = await Permissions.requestMicrophone(from: .settings) }
                 }
                 permissionLine("Accessibility", "To read the text field you're in and paste.", Permissions.accessibility) {
-                    Permissions.requestAccessibility()
+                    Permissions.requestAccessibility(from: .settings)
                 }
                 permissionLine("Input Monitoring", "To notice the shortcut in other apps.", Permissions.inputMonitoring, last: true) {
-                    Permissions.requestInputMonitoring()
+                    Permissions.requestInputMonitoring(from: .settings)
                 }
             }
             SettingsSection(title: "Scratchpad") {
