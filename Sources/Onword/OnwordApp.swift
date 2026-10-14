@@ -64,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             DockIcon.apply()
+            // Look for a new version shortly after launch, then once a day.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { UpdateChecker.shared.checkIfStale() }
+            Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { _ in
+                MainActor.assumeIsolated { UpdateChecker.shared.check() }
+            }
             History.prune()
             DictationController.shared.start()
             FlowBar.shared.start()
@@ -121,10 +126,14 @@ private struct MenuContent: View {
     @ObservedObject var controller: DictationController
     @ObservedObject var meetings: MeetingRecorder
     @ObservedObject var detector = MeetingDetector.shared
+    @ObservedObject var updates = UpdateChecker.shared
 
     var body: some View {
         Button("Open Onword") { WindowManager.shared.show() }
             .keyboardShortcut("o")
+        if let version = updates.availableVersion {
+            Button("Update to Onword \(version)…") { updates.update() }
+        }
         Text(controller.statusText)
         if controller.modelFailure != nil {
             Button("Retry speech model download") { controller.retryModel() }

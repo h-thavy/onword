@@ -118,11 +118,28 @@ struct SettingsView: View {
         case .checking:
             ProgressView().controlSize(.mini).frame(width: 28, height: 28).help("Checking for updates…")
         case .available(let version):
-            Button { updates.openRelease() } label: {
-                Image(systemName: "arrow.down.circle.fill").font(.system(size: 14)).foregroundStyle(Theme.tileRing)
+            // One click: download, verify, replace the app and relaunch.
+            Button { updates.update() } label: {
+                Label("Update", systemImage: "arrow.down.circle.fill")
+                    .font(Theme.sans(12, .semibold)).foregroundStyle(Theme.onPrimary)
+                    .padding(.horizontal, 8).frame(height: 24)
+                    .background(Capsule().fill(Theme.tileRing))
+            }
+            .buttonStyle(.plainPointer).help("Update to Onword \(version) and relaunch")
+        case .downloading(_, let progress):
+            HStack(spacing: 6) {
+                ProgressView(value: progress).frame(width: 44).tint(Theme.tileRing)
+                Text("\(Int(progress * 100))%").monospacedDigit()
+            }
+            .help("Downloading the update…")
+        case .installing:
+            HStack(spacing: 4) { ProgressView().controlSize(.mini); Text("Installing…") }
+        case .failed(let message):
+            Button { updates.check() } label: {
+                Image(systemName: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(.orange)
                     .frame(width: 28, height: 28).contentShape(Rectangle())
             }
-            .buttonStyle(.plainPointer).help("Onword \(version) is available — click to see how to update")
+            .buttonStyle(.plainPointer).help("\(message) Click to try again.")
         case .upToDate, .unknown:
             Button { updates.check() } label: {
                 Image(systemName: updates.state == .upToDate ? "checkmark.icloud" : "icloud")
