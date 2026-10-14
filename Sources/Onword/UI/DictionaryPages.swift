@@ -30,28 +30,31 @@ struct DictionaryPage: View {
             SearchField(prompt: "Search vocabulary", text: $query)
 
             let entries = store.entries(matching: query)
-            VStack(spacing: 2) {
-                ForEach(entries) { entry in
-                    HoverRow {
-                        switch entry {
-                        case .word(let word):
-                            Text(word).font(Theme.sans(14, .medium))
-                        case .correction(let from, let to):
-                            HStack(spacing: 8) {
-                                Text(from).foregroundStyle(Theme.inkTertiary)
-                                Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(Theme.inkTertiary)
-                                Text(to).font(Theme.sans(14, .medium))
+            if entries.isEmpty {
+                EmptyState(title: query.isEmpty ? "No words yet." : "No matches",
+                           detail: query.isEmpty ? "Words and corrections you add show up here." : "Try a different word.")
+            } else {
+                TableCard {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 { Rectangle().fill(Theme.border).frame(height: 1) }
+                        HoverRow {
+                            switch entry {
+                            case .word(let word):
+                                Text(word).font(Theme.sans(15))
+                            case .correction(let from, let to):
+                                HStack(spacing: 8) {
+                                    Text(from).foregroundStyle(Theme.inkTertiary)
+                                    Image(systemName: "arrow.right").font(.system(size: 12)).foregroundStyle(Theme.inkTertiary)
+                                    Text(to).font(Theme.sans(15))
+                                }
+                            }
+                        } actions: {
+                            HStack(spacing: 6) {
+                                IconButton(systemImage: "pencil", help: "Edit") { editing = .entry(entry) }
+                                IconButton(systemImage: "trash", help: "Delete") { store.remove(entry) }
                             }
                         }
-                    } actions: {
-                        HStack(spacing: 2) {
-                            IconButton(systemImage: "pencil", help: "Edit") { editing = .entry(entry) }
-                            IconButton(systemImage: "trash", help: "Delete") { store.remove(entry) }
-                        }
                     }
-                }
-                if entries.isEmpty {
-                    Text(query.isEmpty ? "No words yet." : "No matches.").foregroundStyle(Theme.inkTertiary).padding(12)
                 }
             }
         }
@@ -97,7 +100,7 @@ private struct DictionaryEditor: View {
             }
         }
         .padding(24)
-        .frame(width: 420)
+        .frame(minWidth: 480)
         .background(Theme.panel)
         .onAppear(perform: load)
     }
@@ -107,8 +110,8 @@ private struct DictionaryEditor: View {
     private func field(_ label: String, _ text: Binding<String>, _ prompt: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(Theme.sans(12.5, .semibold)).foregroundStyle(Theme.inkSecondary)
-            TextField(prompt, text: text).textFieldStyle(.plain).font(Theme.sans(14))
-                .padding(.horizontal, 10).padding(.vertical, 8)
+            TextField(prompt, text: text).textFieldStyle(.plain).font(Theme.sans(15))
+                .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
         }
@@ -165,25 +168,28 @@ struct SnippetsPage: View {
             SearchField(prompt: "Search snippets", text: $query)
 
             let snippets = store.snippets(matching: query)
-            VStack(spacing: 2) {
-                ForEach(snippets, id: \.trigger) { snippet in
-                    HoverRow {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text("“\(snippet.trigger)”").font(Theme.sans(14, .semibold))
-                            Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(Theme.inkTertiary)
-                            Text(snippet.text).foregroundStyle(Theme.inkSecondary).lineLimit(1)
-                        }
-                    } actions: {
-                        HStack(spacing: 2) {
-                            IconButton(systemImage: "pencil", help: "Edit") { editing = SnippetTarget(trigger: snippet.trigger) }
-                            IconButton(systemImage: "trash", help: "Delete") {
-                                store.update { $0.snippets[snippet.trigger] = nil }
+            if snippets.isEmpty {
+                EmptyState(title: query.isEmpty ? "No snippets yet." : "No matches",
+                           detail: query.isEmpty ? "Text you save shows up here — say its trigger while dictating." : "Try a different word.")
+            } else {
+                TableCard {
+                    ForEach(Array(snippets.enumerated()), id: \.element.trigger) { index, snippet in
+                        if index > 0 { Rectangle().fill(Theme.border).frame(height: 1) }
+                        HoverRow {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("“\(snippet.trigger)”").font(Theme.sans(15))
+                                Image(systemName: "arrow.right").font(.system(size: 12)).foregroundStyle(Theme.inkTertiary)
+                                Text(snippet.text).font(Theme.sans(15)).foregroundStyle(Theme.inkSecondary).lineLimit(1)
+                            }
+                        } actions: {
+                            HStack(spacing: 6) {
+                                IconButton(systemImage: "pencil", help: "Edit") { editing = SnippetTarget(trigger: snippet.trigger) }
+                                IconButton(systemImage: "trash", help: "Delete") {
+                                    store.update { $0.snippets[snippet.trigger] = nil }
+                                }
                             }
                         }
                     }
-                }
-                if snippets.isEmpty {
-                    Text(query.isEmpty ? "No snippets yet." : "No matches.").foregroundStyle(Theme.inkTertiary).padding(12)
                 }
             }
         }
@@ -204,14 +210,14 @@ private struct SnippetEditor: View {
             Text(original == nil ? "Add snippet" : "Edit snippet").font(Theme.serif(26))
             VStack(alignment: .leading, spacing: 5) {
                 Text("When you say").font(Theme.sans(12.5, .semibold)).foregroundStyle(Theme.inkSecondary)
-                TextField("my email", text: $trigger).textFieldStyle(.plain).font(Theme.sans(14))
-                    .padding(.horizontal, 10).padding(.vertical, 8)
+                TextField("my email", text: $trigger).textFieldStyle(.plain).font(Theme.sans(15))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
                     .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text("Insert").font(Theme.sans(12.5, .semibold)).foregroundStyle(Theme.inkSecondary)
-                TextEditor(text: $text).font(Theme.sans(14)).scrollContentBackground(.hidden)
+                TextEditor(text: $text).font(Theme.sans(15)).scrollContentBackground(.hidden)
                     .padding(6).frame(height: 120)
                     .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
                     .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
@@ -224,7 +230,7 @@ private struct SnippetEditor: View {
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .frame(width: 640)
         .background(Theme.panel)
         .onAppear {
             if let original {

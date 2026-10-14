@@ -12,7 +12,6 @@ struct NotetakerPage: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.border)
             HStack(spacing: 0) {
                 list
                     .frame(width: 300)
@@ -26,10 +25,10 @@ struct NotetakerPage: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text("Notetaker").font(Theme.serif(34))
+        HStack(alignment: .center, spacing: 8) {
+            Text("Notetaker").font(Theme.sans(24, .semibold))
             Spacer()
-            IconButton(systemImage: "gearshape", help: "Notetaker settings") { router.settingsTab = .notetaker }
+            IconButton(systemImage: "gearshape", help: "Notetaker settings", box: 32, icon: 20) { router.settingsTab = .notetaker }
             if recorder.isRecording {
                 Button { recorder.stop() } label: {
                     HStack(spacing: 7) {
@@ -40,35 +39,38 @@ struct NotetakerPage: View {
                 .buttonStyle(PillButtonStyle(tint: Theme.recording))
             } else {
                 Button { recorder.start() } label: { Label("Start Notetaker", systemImage: "record.circle") }
-                    .buttonStyle(.pill)
+                    .buttonStyle(.pillQuiet)
+                    .controlSize(.small)
             }
         }
-        .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 16)
+        .padding(.horizontal, 40).padding(.top, 40).padding(.bottom, 24)
     }
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 10) {
             UpcomingSection()
-            HStack {
-                Text("Past notes").font(Theme.sans(13, .semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.selected))
+            HStack(spacing: 0) {
+                UnderlineTab(title: "Past notes")
+                    .padding(.leading, -12)
                 Spacer()
             }
+            .background(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
             SearchField(prompt: "Search past meetings", text: $query)
             if let warning = recorder.systemAudioWarning {
                 Text(warning).font(Theme.sans(12)).foregroundStyle(.orange)
             }
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: 20) {
                     ForEach(groups, id: \.day) { group in
-                        SectionLabel(text: group.day).padding(.leading, 10).padding(.top, 10).padding(.bottom, 2)
-                        ForEach(group.meetings) { meeting in
-                            MeetingRow(meeting: meeting, selected: router.selectedMeetingID == meeting.id)
-                                .onTapGesture { router.selectedMeetingID = meeting.id }
-                                .contextMenu {
-                                    Button("Delete", role: .destructive) { delete(meeting.id) }
-                                }
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionLabel(text: group.day).padding(.leading, 4)
+                            ForEach(group.meetings) { meeting in
+                                MeetingRow(meeting: meeting, selected: router.selectedMeetingID == meeting.id)
+                                    .onTapGesture { router.selectedMeetingID = meeting.id }
+                                    .contextMenu {
+                                        Button("Delete", role: .destructive) { delete(meeting.id) }
+                                    }
+                            }
                         }
                     }
                     if groups.isEmpty {
@@ -104,7 +106,7 @@ struct NotetakerPage: View {
                 Text("Bot-free meeting notes").font(Theme.serif(28))
                 Text("Start Notetaker when a call begins, or let Onword ask when it notices one. Your mic and the call are recorded separately, transcribed on this Mac, and tagged by speaker.")
                     .multilineTextAlignment(.center).foregroundStyle(Theme.inkTertiary).frame(maxWidth: 420)
-                Button { recorder.start() } label: { Label("Start Notetaker", systemImage: "record.circle") }.buttonStyle(.pill)
+                Button { recorder.start() } label: { Label("Start Notetaker", systemImage: "record.circle") }.buttonStyle(.pillQuiet)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -122,9 +124,14 @@ private struct MeetingRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "video")
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.inkFaint)
+                .frame(width: 36, height: 36)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.buttonFill))
             VStack(alignment: .leading, spacing: 2) {
-                Text(meeting.title).font(Theme.sans(13.5, .semibold)).lineLimit(1)
+                Text(meeting.title).font(Theme.sans(15)).lineLimit(1)
                 HStack(spacing: 6) {
                     Text(meeting.startedAt.formatted(date: .omitted, time: .shortened).lowercased())
                     switch meeting.status {
@@ -136,6 +143,7 @@ private struct MeetingRow: View {
                 }
                 .font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary)
             }
+            .opacity(hovering || selected ? 1 : 0.7)
             Spacer(minLength: 4)
             if meeting.status == .ready, meeting.summary == nil, !meeting.segments.isEmpty,
                MeetingSummarizer.shared.unavailableReason == nil, hovering || selected {
@@ -144,10 +152,12 @@ private struct MeetingRow: View {
                     .controlSize(.small)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(selected ? Theme.selected : (hovering ? Theme.hover : .clear)))
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(selected || hovering ? Theme.frame : .clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
@@ -217,7 +227,7 @@ private struct MeetingDetail: View {
                                     if speaker == "me" { Text("(you)").font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary) }
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Capsule().fill(Theme.card))
+                                .background(Capsule().fill(Theme.frame))
                                 .overlay(Capsule().strokeBorder(Theme.border))
                             }
                             .buttonStyle(.plain)
@@ -399,7 +409,7 @@ private struct NotesSection: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.card))
+        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.frame))
         .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium).strokeBorder(Theme.border))
     }
 
@@ -463,8 +473,8 @@ private struct RenameSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Who is “\(original)”?").font(Theme.serif(24))
-            TextField("Name", text: $name).textFieldStyle(.plain).font(Theme.sans(14))
-                .padding(.horizontal, 10).padding(.vertical, 8)
+            TextField("Name", text: $name).textFieldStyle(.plain).font(Theme.sans(15))
+                .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
                 .onSubmit(save)
@@ -554,23 +564,23 @@ private struct UpcomingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Upcoming").font(Theme.sans(13, .semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.selected))
-                Spacer()
-            }
+            SectionLabel(text: "Upcoming").padding(.leading, 4)
             if google.isConnected || calendar.access == .granted {
                 if calendar.upcoming.isEmpty {
                     Text("No more meetings today or tomorrow.").font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
                         .padding(.horizontal, 10)
                 } else {
-                    ForEach(groups, id: \.day) { group in
-                        SectionLabel(text: group.day).padding(.leading, 10).padding(.top, 4)
-                        ForEach(group.meetings) { meeting in
-                            UpcomingRow(meeting: meeting, recording: recorder.isRecording)
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(groups, id: \.day) { group in
+                            SectionLabel(text: group.day).padding(.leading, 12).padding(.top, 8)
+                            ForEach(group.meetings) { meeting in
+                                UpcomingRow(meeting: meeting, recording: recorder.isRecording)
+                            }
                         }
                     }
+                    .padding(.horizontal, 8).padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: Theme.radiusLarge).fill(Theme.frame))
                 }
             } else {
                 ConnectCalendarCard()
@@ -595,10 +605,10 @@ private struct UpcomingRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2).fill(Color(nsColor: meeting.calendarColor)).frame(width: 3, height: 30)
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: meeting.calendarColor)).frame(width: 4, height: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(meeting.title).font(Theme.sans(13.5, .semibold)).lineLimit(1)
+                Text(meeting.title).font(Theme.sans(15, meeting.isNow ? .medium : .regular)).lineLimit(1)
                 HStack(spacing: 5) {
                     Text(timeRange)
                     if let platform = meeting.platform { Text("· \(platform.title)") }
@@ -611,13 +621,15 @@ private struct UpcomingRow: View {
                 Button(meeting.joinURL != nil ? "Join & Record" : "Record") {
                     CalendarService.shared.joinAndRecord(meeting)
                 }
-                .buttonStyle(PillButtonStyle(prominent: meeting.isNow))
+                .buttonStyle(PillButtonStyle(prominent: meeting.isNow, bordered: !meeting.isNow))
+                .controlSize(.small)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(hovering ? Theme.hover : .clear))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(hovering ? Theme.buttonFill : .clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
         .help(meeting.attendees.isEmpty ? meeting.title : "With " + meeting.attendees.joined(separator: ", "))
     }
 
@@ -638,7 +650,8 @@ struct ConnectCalendarCard: View {
             Text("See upcoming meetings, join and take notes in one click, and get notes named after the event.")
                 .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 10) {
+            // Stacked full-width so the labels never wrap in the narrow column.
+            VStack(alignment: .leading, spacing: 8) {
                 if google.isConfigured { Button {
                     google.connect()
                 } label: {
@@ -646,11 +659,15 @@ struct ConnectCalendarCard: View {
                         if google.isConnecting { ProgressView().controlSize(.mini) }
                         Text(google.isConnecting ? "Waiting for Google…" : "Connect Google Calendar")
                     }
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.pill)
                 .disabled(google.isConnecting) }
-                Button("Use Mac Calendar") { CalendarService.shared.requestAccess() }
-                    .buttonStyle(google.isConfigured ? PillButtonStyle(prominent: false) : PillButtonStyle())
+                Button { CalendarService.shared.requestAccess() } label: {
+                    Text("Use Mac Calendar").lineLimit(1).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(google.isConfigured ? PillButtonStyle(prominent: false) : PillButtonStyle())
             }
             if !google.isConfigured {
                 Text("To see Google Calendar: add your Google account in System Settings → Internet Accounts (Calendars on), then click Use Mac Calendar.")

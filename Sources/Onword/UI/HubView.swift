@@ -43,27 +43,37 @@ final class HubRouter: ObservableObject {
     @Published var selectedMeetingID: UUID?
 }
 
-/// The main window: a sidebar on the warm frame and the page on a
-/// white rounded panel.
+/// The main window: a 52-pt title strip, then a sidebar on the warm frame and the
+/// page on a rounded panel (24 pt corners on top, 16 on the bottom).
 struct HubView: View {
     @ObservedObject private var router = HubRouter.shared
+    @AppStorage("hubSidebarCollapsed") private var collapsed = false
+
+    private let panel = UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 16,
+                                               bottomTrailingRadius: 16, topTrailingRadius: 24)
 
     var body: some View {
-        HStack(spacing: 0) {
-            Sidebar(router: router)
-                .frame(width: 212)
-            page
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.panel))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMedium))
-                .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium).strokeBorder(Theme.border))
-                .padding([.top, .trailing, .bottom], 8)
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                TitleStrip(collapsed: $collapsed, canCollapse: geo.size.width >= 1000)
+                HStack(spacing: 0) {
+                    Sidebar(router: router, collapsed: collapsed)
+                        .frame(width: collapsed ? 60 : 216)
+                    page
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(panel.fill(Theme.page))
+                        .clipShape(panel)
+                        .overlay(panel.strokeBorder(Theme.border))
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 8)
+                }
+            }
         }
         .background(Theme.frame)
-        .font(Theme.sans(14))
+        .font(Theme.sans(15))
         .foregroundStyle(Theme.ink)
-        .frame(minWidth: 920, minHeight: 600)
         .overlay { SettingsOverlay(router: router) }
+        .animation(.easeOut(duration: 0.15), value: collapsed)
     }
 
     @ViewBuilder
@@ -79,38 +89,78 @@ struct HubView: View {
     }
 }
 
+/// The full-width draggable strip across the top. The traffic lights sit in the first
+/// 76 pt; the sidebar-collapse button is a 32×32 tile at x 92.
+private struct TitleStrip: View {
+    @Binding var collapsed: Bool
+    let canCollapse: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { collapsed.toggle() } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 17))
+                    .frame(width: 20, height: 20)
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 32, height: 32)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.buttonFill : .clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(collapsed ? "Show sidebar" : "Hide sidebar")
+            .disabled(!canCollapse && !collapsed)
+            .opacity(canCollapse || collapsed ? 1 : 0.4)
+            .onHover { hovering = $0 }
+            .padding(.leading, 92)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 52)
+    }
+}
+
 private struct Sidebar: View {
     @ObservedObject var router: HubRouter
+    var collapsed: Bool
     @ObservedObject private var dictation = DictationController.shared
     @ObservedObject private var recorder = MeetingRecorder.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                LogoMark(size: 30)
-                Text("Onword").font(Theme.serif(24))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 2) {
+                LogoMark(size: 20).frame(height: 25).padding(.leading, 3)
+                if !collapsed {
+                    // Onword's serif wordmark, sized like Wispr's 20 pt-tall wordmark.
+                    Text("Onword").font(Theme.serif(26)).padding(.leading, 6)
+                }
             }
-                .padding(.leading, 8)
-                .padding(.top, 40)      // clears the traffic lights
-                .padding(.bottom, 18)
+            .padding(.horizontal, 5).padding(.vertical, 4)
+            .padding(.bottom, 16)
 
-            ForEach(HubRouter.Page.allCases) { page in
-                NavItem(title: page.title, icon: page.icon, selected: router.page == page,
-                        badge: page == .notetaker && recorder.isRecording ? "REC" : nil) {
-                    router.page = page
+            VStack(spacing: 4) {
+                ForEach(HubRouter.Page.allCases) { page in
+                    NavItem(title: page.title, icon: page.icon, selected: router.page == page,
+                            collapsed: collapsed,
+                            badge: page == .notetaker && recorder.isRecording ? "REC" : nil) {
+                        router.page = page
+                    }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            StatusCard(dictation: dictation)
+            if !collapsed {
+                StatusCard(dictation: dictation)
+                    .padding(.bottom, 8)
+            }
+            Divider().overlay(Theme.border)
                 .padding(.bottom, 8)
-            NavItem(title: "Settings", icon: "gearshape", selected: false) {
+            NavItem(title: "Settings", icon: "gearshape", selected: false, collapsed: collapsed) {
                 router.settingsTab = .general
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 14)
+        .padding(12)
     }
 }
 
@@ -118,31 +168,35 @@ private struct NavItem: View {
     let title: String
     let icon: String
     let selected: Bool
+    var collapsed = false
     var badge: String?
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 14)).frame(width: 18)
-                Text(title).font(Theme.sans(14, selected ? .semibold : .medium))
-                Spacer()
-                if let badge {
-                    Text(badge).font(Theme.sans(10, .bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Capsule().fill(Theme.recording))
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 16)).frame(width: 20, height: 20)
+                if !collapsed {
+                    Text(title).font(Theme.sans(15, .medium))
+                    Spacer()
+                    if let badge {
+                        Text(badge).font(Theme.sans(10, .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.recording))
+                    }
                 }
             }
-            .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: Theme.radius)
-                .fill(selected ? Theme.panel : (hovering ? Theme.selected.opacity(0.6) : .clear))
-                .shadow(color: .black.opacity(selected ? 0.05 : 0), radius: 1, y: 1))
+            .foregroundStyle(Theme.ink)
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(selected || hovering ? Theme.buttonFill : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
@@ -175,10 +229,9 @@ private struct StatusCard: View {
             }
         }
         .foregroundStyle(Theme.inkSecondary)
-        .padding(12)
+        .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.panel.opacity(0.6)))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium).strokeBorder(Theme.border))
+        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.mutedCard))
     }
 }
 
@@ -193,19 +246,23 @@ extension HotkeyMonitor.Key {
     }
 }
 
-/// Standard page body: scrollable, comfortable reading width, generous padding.
+/// Standard page body: scrollable, centred, 40 pt of padding on the top and sides.
+/// Content is capped at `maxWidth` — or max(800, half the window) when nil.
 struct PageScroll<Content: View>: View {
+    var maxWidth: CGFloat? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) { content() }
-                .frame(maxWidth: 780, alignment: .leading)
-                .padding(.horizontal, 40)
-                .padding(.top, 36)
-                .padding(.bottom, 40)
-                .frame(maxWidth: .infinity)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) { content() }
+                    .frame(maxWidth: maxWidth ?? max(800, geo.size.width / 2), alignment: .leading)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 40)
+                    .padding(.bottom, 40)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
         }
-        .scrollContentBackground(.hidden)
     }
 }

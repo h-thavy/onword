@@ -24,6 +24,19 @@ enum Theme {
     /// Primary buttons: ink on light, sand on dark.
     static let primary = dynamic(light: 0x1A1A1A, dark: 0xFCFCFB)
     static let onPrimary = dynamic(light: 0xFCFCFB, dark: 0x1A1A1A)
+    /// The Hub's page panel (background): warm off-white, not pure white.
+    static let page = dynamic(light: 0xFCFCFB, dark: 0x1A1A1A)
+    /// Status and upcoming-meeting cards (muted-hover).
+    static let mutedCard = dynamic(light: 0xF1EBE1, dark: 0x30302F)
+    /// Quiet toolbar and row-action icons at rest (vast-300).
+    static let iconFaint = dynamic(light: 0xB3B2AD, dark: 0x9D9C98)
+    /// Outline-variant button border (sand-700).
+    static let outline = dynamic(light: 0xC5C0B3, dark: 0x5B5B59)
+    /// Orange key chip and glow badges (glow-300, the same in both modes).
+    static let glow = Color(red: 1, green: 0xA9 / 255, blue: 0x46 / 255)
+    /// The Scratchpad shortcut pill (sand-300 / vast-900, ring border / vast-800).
+    static let shortcutPill = dynamic(light: 0xF7F6F2, dark: 0x30302F)
+    static let shortcutPillRing = dynamic(light: 0xEEEBE3, dark: 0x464544)
     /// Lavender accent for highlights and badges (dawn-300/900).
     static let accent = dynamic(light: 0xF4E1FF, dark: 0x3C2947)
     static let onAccent = dynamic(light: 0x502B66, dark: 0xF0D7FF)
@@ -85,20 +98,20 @@ extension Theme {
 
 // MARK: - Components
 
-/// Page title row: serif title, optional badge, actions on the right.
+/// Page title row: 24 pt semibold Figtree title, optional badge, actions on the right.
 struct PageHeader<Actions: View>: View {
     let title: String
     var badge: String?
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(title).font(Theme.serif(34)).foregroundStyle(Theme.ink)
+        HStack(alignment: .center, spacing: 8) {
+            Text(title).font(Theme.sans(24, .semibold)).foregroundStyle(Theme.ink)
             if let badge {
-                Text(badge).font(Theme.sans(11, .semibold)).foregroundStyle(Theme.onAccent)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Capsule().fill(Theme.accent))
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 }
+                Text(badge).font(Theme.sans(12, .medium)).foregroundStyle(Color(hex: 0x1A1A1A))
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .frame(height: 22)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(hex: 0xF0D7FF)))
             }
             Spacer()
             actions()
@@ -122,27 +135,29 @@ struct HeroCard<Action: View>: View {
     @ViewBuilder var action: () -> Action
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("\(before)\(Text(italic).font(Theme.serif(28, italic: true)))\(after)")
-                .font(Theme.serif(28))
+                .font(Theme.serif(28)).tracking(-1.12)
                 .foregroundStyle(Theme.ink)
-            Text(message).font(Theme.sans(14)).foregroundStyle(Theme.inkTertiary)
+            Text(message).font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            action()
+            action().padding(.top, 16)
         }
-        .padding(24)
+        .padding(32)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: Theme.radiusLarge).fill(Theme.accent.opacity(0.55)))
     }
 }
 
-/// Dark pill button, or a quiet outlined one.
+/// Primary (dark) or secondary (sand) button: radius 8, 15 pt, 36 tall — or 32 at `.small`.
 struct PillButtonStyle: ButtonStyle {
     var prominent = true
     var tint: Color?
+    /// Draw a 1-pt outline instead of the sand fill (the "outline" variant).
+    var bordered = false
 
     func makeBody(configuration: Configuration) -> some View {
-        PillBody(configuration: configuration, prominent: prominent, tint: tint)
+        PillBody(configuration: configuration, prominent: prominent, tint: tint, bordered: bordered)
     }
 }
 
@@ -150,19 +165,25 @@ private struct PillBody: View {
     let configuration: ButtonStyleConfiguration
     let prominent: Bool
     let tint: Color?
+    let bordered: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+
+    private var small: Bool { controlSize == .small || controlSize == .mini }
 
     var body: some View {
         configuration.label
-            .font(Theme.sans(13, .semibold))
-            .padding(.horizontal, 14).padding(.vertical, 7)
+            .font(Theme.sans(15, prominent ? .medium : .semibold))
+            .padding(.horizontal, small ? 12 : 16).padding(.vertical, small ? 6 : 8)
             .foregroundStyle(prominent ? Theme.onPrimary : Theme.ink)
             .background(
-                Capsule().fill(prominent ? (tint ?? Theme.primary) : Theme.panel)
-                    .overlay(Capsule().strokeBorder(prominent ? .clear : Theme.border))
+                RoundedRectangle(cornerRadius: Theme.radius)
+                    .fill(prominent ? (tint ?? Theme.primary) : (bordered ? Theme.page : Theme.buttonFill))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radius)
+                        .strokeBorder(bordered ? Theme.outline : .clear))
             )
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radius))
     }
 }
 
@@ -175,19 +196,27 @@ extension ButtonStyle where Self == PillButtonStyle {
 struct IconButton: View {
     let systemImage: String
     let help: String
+    var box: CGFloat = 28
+    var icon: CGFloat = 16
+    /// Give the button a filled, 1-pt-bordered tile (floating actions on cards).
+    var bordered = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage).font(.system(size: 13))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(hovering ? Theme.ink : Theme.inkTertiary)
-                .background(RoundedRectangle(cornerRadius: Theme.radiusSmall).fill(hovering ? Theme.selected : .clear))
+            Image(systemName: systemImage).font(.system(size: icon))
+                .frame(width: box, height: box)
+                .foregroundStyle(hovering ? Theme.ink : Theme.iconFaint)
+                .background(RoundedRectangle(cornerRadius: box > 32 ? 8 : 6)
+                    .fill(bordered ? Theme.panel : (hovering ? Theme.frame : .clear)))
+                .overlay(RoundedRectangle(cornerRadius: box > 32 ? 8 : 6)
+                    .strokeBorder(bordered ? Theme.border : .clear))
         }
         .buttonStyle(.plain)
         .help(help)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
@@ -211,15 +240,15 @@ struct SearchField: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Theme.inkTertiary)
-            TextField(prompt, text: $text).textFieldStyle(.plain).font(Theme.sans(13))
+            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.inkTertiary)
+            TextField(prompt, text: $text).textFieldStyle(.plain).font(Theme.sans(15))
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.inkTertiary) }
                     .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.panel))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
     }
 }
@@ -228,12 +257,12 @@ struct SearchField: View {
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text.uppercased()).font(Theme.sans(11, .semibold)).kerning(0.6).foregroundStyle(Theme.inkTertiary)
+        Text(text.uppercased()).font(Theme.sans(12, .semibold)).tracking(0.9).foregroundStyle(Theme.inkTertiary)
     }
 }
 
-/// A list row that highlights on hover and reveals trailing actions.
-/// Actions float over the row's right edge on hover, so text can use the full width.
+/// A table row that reveals its trailing actions on hover. The actions keep their
+/// space (opacity, not removal), so a one-line row is exactly 52 tall.
 struct HoverRow<Content: View, Actions: View>: View {
     var selected = false
     @ViewBuilder var content: () -> Content
@@ -241,22 +270,19 @@ struct HoverRow<Content: View, Actions: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        content()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(selected ? Theme.selected : (hovering ? Theme.hover : .clear)))
-            .overlay(alignment: .topTrailing) {
-                if hovering {
-                    actions()
-                        .padding(3)
-                        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.panel)
-                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
-                        .padding(6)
-                }
-            }
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
+        HStack(alignment: .center, spacing: 6) {
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.init(top: 16, leading: 16, bottom: 16, trailing: 4))
+            actions()
+                .opacity(hovering || selected ? 1 : 0)
+                .padding(.init(top: 12, leading: 0, bottom: 12, trailing: 8))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected || hovering ? Theme.frame : .clear)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
@@ -293,6 +319,62 @@ struct SettingsRow<Control: View>: View {
             .padding(.horizontal, 16).padding(.vertical, 12)
             if !last { Divider().overlay(Theme.border).padding(.leading, 16) }
         }
+    }
+}
+
+/// One rounded list table: hairline-separated rows inside a 16-radius, 1-pt border.
+struct TableCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) { content() }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLarge))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusLarge).strokeBorder(Theme.border))
+    }
+}
+
+/// The orange keycap ("fn"): 1-pt ink border, radius 5.5, hard offset shadow.
+struct GlowChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(Theme.sans(15, .semibold)).foregroundStyle(Color(hex: 0x1A1A1A))
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 5.5).fill(Theme.glow))
+            .overlay(RoundedRectangle(cornerRadius: 5.5).strokeBorder(Color(hex: 0x1A1A1A)))
+            .shadow(color: Color(hex: 0x1A1A1A), radius: 0, x: -0.8, y: 0.8)
+    }
+}
+
+/// A selected underline tab: 15 pt semibold, 2-pt ink underline, 12-pt padding.
+struct UnderlineTab: View {
+    let title: String
+
+    var body: some View {
+        Text(title).font(Theme.sans(15, .semibold)).foregroundStyle(Theme.ink)
+            .padding(12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.ink).frame(height: 2).padding(.horizontal, 12)
+            }
+    }
+}
+
+/// A list's empty state: centred message on a sand tile.
+struct EmptyState: View {
+    let title: String
+    var detail: String? = nil
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title).font(Theme.sans(16, .medium))
+            if let detail {
+                Text(detail).font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(RoundedRectangle(cornerRadius: Theme.radiusLarge).fill(Theme.frame))
+        .padding(.vertical, 16)
     }
 }
 
