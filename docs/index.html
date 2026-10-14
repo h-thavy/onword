@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;1,500&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <header class="bar">
@@ -31,7 +31,7 @@
       <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash</code>
       <button class="copy" type="button" aria-label="Copy command" title="Copy">
         <svg class="icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        <svg class="icon-check" style="display:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
       </button>
     </div>
   </section>
@@ -70,8 +70,14 @@
       var text = button.parentElement.querySelector('code').textContent;
       var done = function () {
         button.classList.add('copied');
+        button.querySelector('.icon-copy').style.display = 'none';
+        button.querySelector('.icon-check').style.display = 'block';
         button.setAttribute('title', 'Copied');
-        setTimeout(function () { button.classList.remove('copied'); button.setAttribute('title', 'Copy'); }, 1600);
+        setTimeout(function () {
+          button.classList.remove('copied'); button.setAttribute('title', 'Copy');
+          button.querySelector('.icon-copy').style.display = '';
+          button.querySelector('.icon-check').style.display = 'none';
+        }, 1600);
       };
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(done);
