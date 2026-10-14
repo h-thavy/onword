@@ -1,23 +1,35 @@
 import Foundation
 
-/// A Scratchpad note. The body is plain text (Markdown-friendly); the title is its first line.
+/// A Scratchpad note. The body is plain text (Markdown-friendly); the title is its first line unless
+/// the note was renamed.
 public struct Note: Codable, Equatable, Identifiable {
     public var id: UUID
     public var body: String
     public var created: Date
     public var updated: Date
     public var pinned: Bool
+    /// Name given by renaming the note's Scratchpad tab; nil (absent in older files) uses the first line.
+    public var customTitle: String?
 
-    public init(id: UUID = UUID(), body: String = "", created: Date = Date(), updated: Date = Date(), pinned: Bool = false) {
+    public init(id: UUID = UUID(), body: String = "", created: Date = Date(), updated: Date = Date(),
+                pinned: Bool = false, customTitle: String? = nil) {
         self.id = id
         self.body = body
         self.created = created
         self.updated = updated
         self.pinned = pinned
+        self.customTitle = customTitle
     }
 
-    /// First non-empty line without Markdown heading marks, capped at 60 characters.
+    /// True when there is nothing worth keeping: no text and no name.
+    public var isBlank: Bool {
+        body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (customTitle ?? "").isEmpty
+    }
+
+    /// The custom name if set, otherwise the first non-empty line without Markdown heading marks,
+    /// capped at 60 characters.
     public var title: String {
+        if let customTitle, !customTitle.trimmingCharacters(in: .whitespaces).isEmpty { return customTitle }
         let line = body.split(separator: "\n", omittingEmptySubsequences: true)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first { !$0.isEmpty } ?? ""
@@ -37,7 +49,7 @@ public struct Note: Codable, Equatable, Identifiable {
 
     public func matches(_ query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces)
-        return q.isEmpty || body.localizedCaseInsensitiveContains(q)
+        return q.isEmpty || body.localizedCaseInsensitiveContains(q) || (customTitle ?? "").localizedCaseInsensitiveContains(q)
     }
 }
 

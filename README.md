@@ -49,7 +49,7 @@ Records calls **without a bot joining**: your microphone and your Mac's audio ou
 - **Calendar:** the Notetaker lists your upcoming meetings with a **Join & Record** button, reminds you when one starts, and names the recording and speakers after the event and its guests. To include **Google Calendar**, add your Google account in System Settings → Internet Accounts (with Calendars on), then click **Use Mac Calendar** in Notetaker or Settings → Connections. iCloud, Outlook and Exchange calendars work the same way.
 
 ### Scratchpad (⌃⌥S)
-Quick notes you can type or dictate into, with search and pinning.
+Quick notes you can type or dictate into, with search and pinning. ⌃⌥S opens a floating window at your mouse pointer, over any app and in full screen; press it again to hide the window (your notes stay open). Up to five notes open as tabs (⌘T new, ⌘W close, double-click to rename), and ⌘E shows the notes list. Notes save on their own. The Scratchpad page in Onword lists all notes; click one to open it in the window.
 
 ### Microphone
 By default Onword uses **Automatic**: your AirPods or another Bluetooth/USB headset when one is connected, otherwise the Mac's microphone, and it switches mid-recording when you connect or disconnect one. You can pick a fixed microphone in Settings → General.

@@ -68,15 +68,6 @@ final class WindowManager: NSObject, NSWindowDelegate {
         hub?.appearance = Appearance.current.nsAppearance
     }
 
-    /// The Scratchpad shortcut: hides the Hub if it's already showing the Scratchpad, otherwise opens it.
-    func toggle(_ page: HubRouter.Page) {
-        if let hub, hub.isKeyWindow, HubRouter.shared.page == page {
-            hub.close()
-        } else {
-            show(page)
-        }
-    }
-
     /// Same size as Wispr Flow's main window: 1350×850 (at least 1140×750), shrunk to fit smaller screens.
     private static func hubSize(minimum: Bool) -> NSSize {
         let wanted = minimum ? NSSize(width: 1140, height: 750) : NSSize(width: 1350, height: 850)

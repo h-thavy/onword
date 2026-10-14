@@ -56,7 +56,8 @@ enum AX {
         let app = NSWorkspace.shared.frontmostApplication
         var context = TextContext(bundleID: app?.bundleIdentifier, appName: app?.localizedName, pid: app?.processIdentifier)
         // Never query our own Accessibility tree from the main thread: it would wait on itself.
-        if app?.processIdentifier == getpid() {
+        // The Scratchpad panel takes keyboard focus without making Onword the frontmost app.
+        if app?.processIdentifier == getpid() || MainActor.assumeIsolated({ ScratchpadWindow.shared.isKey }) {
             context.isOwnApp = true
             (context.before, context.after) = OwnWindowInserter.context()
             return context

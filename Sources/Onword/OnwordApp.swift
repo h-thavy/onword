@@ -80,11 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MeetingRecorder.shared.importForTesting(from: URL(fileURLWithPath: folder))
                 WindowManager.shared.show(.notetaker)
             }
+            ScratchpadWindow.shared.runTestHookIfRequested()   // ONWORD_TEST_SCRATCHPAD
 
             // ⌃⌥S Scratchpad, ⌃⌥M meeting recording. (⌃ avoids clashing with other dictation apps'
             // ⌥S / ⌥M shortcuts.)
             GlobalShortcuts.shared.register(keyCode: kVK_ANSI_S, modifiers: controlKey | optionKey) {
-                MainActor.assumeIsolated { WindowManager.shared.toggle(.scratchpad) }
+                MainActor.assumeIsolated { ScratchpadWindow.shared.toggle() }
             }
             GlobalShortcuts.shared.register(keyCode: kVK_ANSI_M, modifiers: controlKey | optionKey) {
                 MainActor.assumeIsolated {
@@ -125,7 +126,7 @@ private struct MenuContent: View {
             WindowManager.shared.show(.notetaker)
         }
         .keyboardShortcut("m", modifiers: [.control, .option])
-        Button("Scratchpad") { WindowManager.shared.show(.scratchpad) }
+        Button("Scratchpad") { ScratchpadWindow.shared.show() }
             .keyboardShortcut("s", modifiers: [.control, .option])
         Button("Copy last transcript") { controller.copyLastText() }
             .disabled(controller.lastText == nil)
