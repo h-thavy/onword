@@ -1,0 +1,115 @@
+<img src="Resources/AppIcon.png" width="128" alt="Onword icon">
+
+# Onword
+
+**Speak, and it's written.** Onword is a free, private voice-to-text app for macOS. Hold a key in any app, speak, let go, and your words are typed where your cursor is. It also takes notes in your meetings.
+
+Everything runs **on your Mac**: no account, no API key, no subscription. Nothing you say is sent anywhere.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash
+```
+
+This downloads the latest release, checks its checksum, installs **Onword.app** in `/Applications` (or `~/Applications` if `/Applications` isn't writable), and opens it. A short setup then walks you through permissions, a microphone test, your shortcut and a practice dictation.
+
+Run the same command again to **update**. To **uninstall**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash -s -- --uninstall
+```
+Add `--purge` to also delete your history, notes, meetings and downloaded models.
+
+**Requirements:**
+- A Mac with **Apple Silicon** (M1 or later) running **macOS 14 Sonoma** or later.
+- About **1 GB** free for the speech model, downloaded once on first launch.
+- Meeting summaries also need **macOS 26 with Apple Intelligence** turned on.
+
+## What it does
+
+### Dictation
+| Do this | Result |
+|---|---|
+| Hold your shortcut (Right ⌥ by default), speak, release | Text appears at your cursor, in any app |
+| Double-tap the shortcut | Hands-free: keeps listening until you press it again |
+| Esc | Cancel |
+| Say "new line" / "new paragraph" | Line break / blank line |
+| Say "… scratch that …" | Deletes the sentence you just said |
+| "um", "uh" | Removed automatically (can be turned off) |
+
+Onword matches the text around your cursor, adding a space or a capital letter when needed. It inserts text directly into native text fields and falls back to a clipboard paste elsewhere; your clipboard is restored afterwards. If you switch apps before the text is ready, it's put on your clipboard instead of typed into the wrong place.
+
+### Notetaker (⌃⌥M)
+Records calls **without a bot joining**: your microphone and your Mac's audio output are recorded as two separate tracks.
+- **Call detection:** Onword can notice a call (Zoom, Teams, FaceTime, Webex, Discord, or Google Meet / Teams / Slack huddles in a browser) and ask whether to record. It stops when the call ends.
+- **Live transcript** while you talk.
+- **Who said what:** you are **Me**, and the other side is split into speakers on-device. With Meet, Teams, Slack or Zoom, speakers get **real names** from the call app's "active speaker" highlight. Rename a speaker by clicking them; give two speakers the same name to merge them.
+- **Summary, decisions and action items**, written on-device by Apple Intelligence (macOS 26). An action item is kept only if the transcript supports it.
+- **Export:** Copy as Markdown, or export a `.md` file.
+
+### Scratchpad (⌃⌥S)
+Quick notes you can type or dictate into, with search and pinning.
+
+### Dictionary & Snippets
+- **Dictionary:** names and jargon to spell your way, plus corrections for words Onword keeps mishearing ("flow light" → "Onword").
+- **Snippets:** say a trigger phrase, get longer text ("my email" → your address).
+
+## Privacy
+- Speech-to-text runs locally with [WhisperKit](https://github.com/argmaxinc/WhisperKit) (Whisper on Core ML); speaker identification with SpeakerKit; summaries with Apple's on-device model.
+- The only network use is downloading the speech and speaker models from Hugging Face, once.
+- **Dictations** are kept as text only, never audio.
+- **Meetings** keep their audio on your Mac so they can be re-processed. Deleting a meeting deletes its audio.
+- Everything lives in `~/Library/Application Support/Onword/`.
+
+## Permissions
+The setup asks for these; you can review them later in **Settings → System**.
+
+| Permission | Why |
+|---|---|
+| Microphone | To hear you |
+| Accessibility | To put text where your cursor is and read the text around it (used only on this Mac) |
+| Input Monitoring | To notice your shortcut while other apps are in front |
+| System Audio Recording | Only when you use Notetaker, to record the other side of the call |
+
+Release builds aren't signed with an Apple Developer ID. Because of that, macOS may ask you to grant Accessibility and Input Monitoring again **after updating**: in System Settings → Privacy & Security, remove Onword with **–** and add it again.
+
+## Troubleshooting
+- **The shortcut does nothing.** Check that Input Monitoring and Accessibility are on for Onword, then quit and reopen it. If you picked **Fn**, set System Settings → Keyboard → "Press 🌐 key to" → **Do Nothing**.
+- **Another dictation app is running.** Apps that intercept keys can swallow Onword's shortcuts; use a different shortcut in Settings.
+- **AirPods miss the first word.** Bluetooth mics switch to call-quality audio when recording starts. Choose the built-in microphone in Settings → General → Microphone (you can keep listening on AirPods).
+- **Text didn't appear.** Some apps block simulated paste. Use **Copy last transcript** in the menu-bar menu.
+- **Logs:**
+  ```bash
+  log stream --predicate 'subsystem == "io.github.h-thavy.onword"'
+  ```
+
+## Build from source
+Requires Xcode 16 or later.
+```bash
+git clone https://github.com/h-thavy/onword.git && cd onword
+scripts/build-app.sh            # → build/Onword.app
+open build/Onword.app
+swift test                      # unit tests for the core logic
+```
+- **Signing:** `build-app.sh` signs with your first Apple Development or Developer ID identity, so permissions survive rebuilds. `SIGN_IDENTITY=-` gives an ad-hoc build.
+- **Releasing:** `scripts/release.sh` builds a release zip and checksum, and `scripts/make-icon.swift` regenerates the icon.
+
+**Testing without speaking:**
+- `ONWORD_TEST_AUDIO=/path.wav` uses a WAV file instead of the microphone.
+- `ONWORD_TEST_MEETING=/folder` imports `mic.wav` / `system.wav` from that folder as a meeting.
+- `kill -USR1 $(pgrep -x Onword)` saves window snapshots to `/tmp/onword-snapshots`.
+
+| Folder | Contents |
+|---|---|
+| `Sources/OnwordCore` | Pure logic with unit tests: text cleanup, shortcut gestures, transcript merging, speaker naming, meeting rules |
+| `Sources/Onword` | The app: audio capture, transcription, text insertion, detection, meetings, UI |
+| `Resources` | Info.plist, entitlements, icon, fonts |
+| `scripts` | Build, release, install and icon scripts |
+
+## Credits
+- [WhisperKit and SpeakerKit](https://github.com/argmaxinc/WhisperKit) by Argmax (MIT).
+- [EB Garamond](https://fonts.google.com/specimen/EB+Garamond) and [Figtree](https://fonts.google.com/specimen/Figtree) fonts (SIL Open Font License, included in `Resources/Fonts`).
+- Inspired by voice-dictation apps such as Wispr Flow. Onword is an independent project and is not affiliated with or endorsed by Wispr.
+
+## License
+[MIT](LICENSE)

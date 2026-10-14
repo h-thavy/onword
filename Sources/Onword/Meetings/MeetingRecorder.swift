@@ -1,0 +1,236 @@
+import AppKit
+import OnwordCore
+import os
+
+/// Records a meeting as two separate tracks: your microphone and the Mac's audio output.
+/// Keeping them separate is what makes "me vs. them" tagging reliable without any cloud service.
+@MainActor
+final class MeetingRecorder: ObservableObject {
+    static let shared = MeetingRecorder()
+
+    @Published private(set) var currentID: UUID?
+    @Published private(set) var elapsed: TimeInterval = 0
+    @Published private(set) var micLevel: Float = 0
+    @Published private(set) var systemLevel: Float = 0
+    @Published private(set) var systemAudioWarning: String?
+    /// Rough transcript while recording; replaced by the diarized one afterwards.
+    @Published private(set) var liveSegments: [TranscriptSegment] = []
+
+    var isRecording: Bool { currentID != nil }
+
+    private let mic = AudioRecorder()
+    private var system: AnyObject?   // SystemAudioCapture on macOS 14.2+
+    private var micWriter: AudioFileWriter?
+    private var systemWriter: AudioFileWriter?
+    private let levels = LevelBox()
+    private var startedAt = Date()
+    private var timer: Timer?
+    private var speakerPoller: ActiveSpeakerPoller?
+    private var live: LiveTranscriber?
+    private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
+
+    private init() {
+        mic.keepsSamples = false
+    }
+
+    func toggle() {
+        isRecording ? stop() : start()
+    }
+
+    func start(title: String? = nil) {
+        guard !isRecording else { return }
+        startedAt = Date()
+        var meeting = Meeting(title: title ?? Meeting.defaultTitle(for: startedAt), startedAt: startedAt)
+        try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
+        let live = LiveTranscriber()
+        self.live = live
+        liveSegments = []
+        let micBuffer = live.mic, systemBuffer = live.system
+
+        do {
+            let writer = try AudioFileWriter(url: meeting.micURL)
+            micWriter = writer
+            let levels = levels
+            mic.onSamples = { samples in
+                writer.append(samples)
+                micBuffer.append(samples)
+                levels.mic = min(1, Resampler.rms(samples) * 8)
+            }
+            try mic.start()
+        } catch {
+            log.error("Meeting mic failed: \(error.localizedDescription)")
+            NSSound.beep()
+            try? FileManager.default.removeItem(at: meeting.folder)
+            return
+        }
+
+        systemAudioWarning = nil
+        if #available(macOS 14.2, *) {
+            do {
+                let writer = try AudioFileWriter(url: meeting.systemURL)
+                let capture = SystemAudioCapture()
+                let levels = levels
+                capture.onSamples = { samples in
+                    writer.append(samples)
+                    systemBuffer.append(samples)
+                    levels.system = min(1, Resampler.rms(samples) * 8)
+                }
+                try capture.start()
+                system = capture
+                systemWriter = writer
+                meeting.hasSystemAudio = true
+            } catch {
+                systemAudioWarning = "Only your microphone is being recorded: \(error.localizedDescription)"
+                log.error("System audio unavailable: \(error.localizedDescription)")
+            }
+        } else {
+            systemAudioWarning = "Recording other apps' audio needs macOS 14.2 or later; only your microphone is recorded."
+        }
+
+        // Read speaker names from the call app, if there is one.
+        if let call = MeetingDetector.shared.findMeeting() {
+            meeting.platform = call.platform.rawValue
+            let poller = ActiveSpeakerPoller(meeting: call, startedAt: startedAt, output: meeting.speakersURL)
+            poller.start()
+            speakerPoller = poller
+        }
+
+        let controller = DictationController.shared
+        live.speakerAt = { [weak speakerPoller] t in speakerPoller?.speaker(at: t) }
+        live.onUpdate = { [weak self] segments in self?.liveSegments = segments }
+        live.start(model: controller.model, language: controller.language == "auto" ? nil : controller.language)
+
+        currentID = meeting.id
+        MeetingStore.shared.save(meeting)
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.elapsed = Date().timeIntervalSince(self.startedAt)
+                self.micLevel = self.levels.mic
+                self.systemLevel = self.levels.system
+            }
+        }
+        log.notice("Meeting recording started (system audio: \(meeting.hasSystemAudio))")
+    }
+
+    func stop() {
+        guard let id = currentID else { return }
+        timer?.invalidate()
+        timer = nil
+        _ = mic.stop()
+        mic.onSamples = nil
+        if #available(macOS 14.2, *) { (system as? SystemAudioCapture)?.stop() }
+        system = nil
+        micWriter = nil      // closes the files
+        systemWriter = nil
+        let participants = speakerPoller?.stop() ?? []
+        speakerPoller = nil
+        live?.stop()
+        live = nil
+        currentID = nil
+        micLevel = 0
+        systemLevel = 0
+
+        let duration = Date().timeIntervalSince(startedAt)
+        MeetingStore.shared.update(id) {
+            $0.duration = duration
+            $0.status = .processing
+            if !participants.isEmpty { $0.participants = participants }
+        }
+        log.notice("Meeting recording stopped after \(Int(duration)) s")
+        process(id)
+    }
+
+    /// Test hook: `ONWORD_TEST_MEETING=/folder` (containing mic.wav and/or system.wav) imports those
+    /// tracks as a new meeting and processes it, exercising everything after the audio capture.
+    func importForTesting(from folder: URL) {
+        var meeting = Meeting(title: "Test meeting – \(folder.lastPathComponent)")
+        try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
+        for (name, destination) in [("mic", meeting.micURL), ("system", meeting.systemURL)] {
+            let source = folder.appendingPathComponent("\(name).wav")
+            guard let samples = try? AudioFileWriter.read(source), let writer = try? AudioFileWriter(url: destination) else { continue }
+            writer.append(samples)
+            meeting.duration = max(meeting.duration, Double(samples.count) / Resampler.sampleRate)
+            if name == "system" { meeting.hasSystemAudio = true }
+        }
+        meeting.status = .processing
+        MeetingStore.shared.save(meeting)
+        log.notice("Imported test meeting from \(folder.path, privacy: .public)")
+        process(meeting.id)
+    }
+
+    /// Transcribes and speaker-tags a meeting. Also used by "Re-process".
+    func process(_ id: UUID) {
+        guard let meeting = MeetingStore.shared.meeting(id) else { return }
+        let controller = DictationController.shared
+        let model = controller.model
+        let language = controller.language == "auto" ? nil : controller.language
+        let replacements = UserDictionary.load(from: AppPaths.dictionary).allReplacements
+        MeetingStore.shared.update(id) { $0.status = .processing; $0.statusDetail = "Starting…" }
+
+        Task {
+            do {
+                let (segments, names) = try await MeetingProcessor.shared.process(
+                    micURL: meeting.micURL, systemURL: meeting.systemURL, speakersURL: meeting.speakersURL,
+                    model: model, language: language, replacements: replacements
+                ) { message in
+                    await MainActor.run { MeetingStore.shared.update(id) { $0.statusDetail = message } }
+                }
+                MeetingStore.shared.update(id) { m in
+                    m.segments = segments
+                    // Names read from the call app, unless the user already named that speaker.
+                    for (speaker, name) in names where m.speakerNames[speaker] == nil
+                        || m.speakerNames[speaker]?.hasPrefix("Speaker ") == true {
+                        m.speakerNames[speaker] = name
+                    }
+                    // Two diarized speakers given the same name are the same person.
+                    for speaker in m.speakers {
+                        guard let name = m.speakerNames[speaker],
+                              let first = m.speakers.first(where: { m.speakerNames[$0] == name }), first != speaker else { continue }
+                        m.segments = TranscriptMerger.reassign(m.segments, from: speaker, to: first)
+                        m.speakerNames[speaker] = nil
+                    }
+                    // Keep names the user already set; default the rest.
+                    var numbered = 0
+                    for speaker in m.speakers where m.speakerNames[speaker] == nil {
+                        if speaker == "me" { m.speakerNames[speaker] = "Me" } else if speaker == "unknown" {
+                            m.speakerNames[speaker] = "Unknown"
+                        } else {
+                            numbered += 1
+                            m.speakerNames[speaker] = "Speaker \(numbered)"
+                        }
+                    }
+                    // Forget names of speakers that no longer appear (e.g. after re-processing).
+                    let present = Set(m.speakers)
+                    m.speakerNames = m.speakerNames.filter { present.contains($0.key) }
+                    m.status = .ready
+                    m.statusDetail = segments.isEmpty ? "No speech was detected." : nil
+                }
+                MeetingSummarizer.shared.summarize(id)
+                // Free the meeting model's memory until the next meeting (dictation keeps its own).
+                if !isRecording { await MeetingProcessor.transcriber.unload() }
+            } catch {
+                log.error("Meeting processing failed: \(error.localizedDescription)")
+                MeetingStore.shared.update(id) {
+                    $0.status = .failed
+                    $0.statusDetail = error.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+/// Latest loudness per track, written from audio threads and read by the UI timer.
+private final class LevelBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _mic: Float = 0
+    private var _system: Float = 0
+    var mic: Float {
+        get { lock.withLock { _mic } }
+        set { lock.withLock { _mic = newValue } }
+    }
+    var system: Float {
+        get { lock.withLock { _system } }
+        set { lock.withLock { _system = newValue } }
+    }
+}
