@@ -8,7 +8,7 @@ final class MeetingPromptPanel {
     private var panel: NSPanel?
     private var hideTimer: Timer?
 
-    func show(title: String, message: String, onChoice: @escaping (Bool) -> Void) {
+    func show(title: String, message: String, acceptTitle: String = "Record", onChoice: @escaping (Bool) -> Void) {
         hide()
         let size = NSSize(width: 320, height: 104)
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
@@ -20,7 +20,7 @@ final class MeetingPromptPanel {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PromptCard(title: title, message: message) { [weak self] accepted in
+        panel.contentView = NSHostingView(rootView: PromptCard(title: title, message: message, acceptTitle: acceptTitle) { [weak self] accepted in
             self?.hide()
             onChoice(accepted)
         })
@@ -46,6 +46,7 @@ final class MeetingPromptPanel {
 private struct PromptCard: View {
     let title: String
     let message: String
+    let acceptTitle: String
     let choose: (Bool) -> Void
 
     var body: some View {
@@ -58,7 +59,7 @@ private struct PromptCard: View {
             HStack {
                 Spacer()
                 Button("Not now") { choose(false) }
-                Button("Record") { choose(true) }.buttonStyle(.borderedProminent)
+                Button(acceptTitle) { choose(true) }.buttonStyle(.borderedProminent)
             }
         }
         .padding(14)

@@ -5,3 +5,4 @@ dist/
 *.xcodeproj
 DerivedData/
 .DS_Store
+Resources/GoogleOAuth.plist

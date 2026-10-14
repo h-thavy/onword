@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Google sign-in for "Connect Google Calendar".
+  Copy this file to GoogleOAuth.plist (git-ignored) and fill in a "Desktop app" OAuth client from
+  Google Cloud Console → Google Auth Platform → Clients, with the Google Calendar API enabled and the
+  calendar.readonly scope added. For desktop apps Google does not treat the client secret as confidential.
+-->
+<plist version="1.0">
+<dict>
+    <key>ClientID</key>
+    <string>YOUR_CLIENT_ID.apps.googleusercontent.com</string>
+    <key>ClientSecret</key>
+    <string>YOUR_CLIENT_SECRET</string>
+</dict>
+</plist>

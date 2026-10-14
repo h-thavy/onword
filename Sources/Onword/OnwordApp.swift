@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             WindowManager.shared.installSnapshotSignal()
             _ = DictionaryStore.shared   // loads (and migrates) the dictionary file
             MeetingDetector.shared.start()
+            CalendarService.shared.start()
             if let folder = ProcessInfo.processInfo.environment["ONWORD_TEST_MEETING"] {
                 MeetingRecorder.shared.importForTesting(from: URL(fileURLWithPath: folder))
                 WindowManager.shared.show(.notetaker)

@@ -92,3 +92,19 @@ final class ActionItemCheckTests: XCTestCase {
         XCTAssertFalse(ActionItemCheck.isGrounded(quote: "I will finish them by Monday", owner: "Samantha Lee", lines: lines))
     }
 }
+
+final class MeetingLinkTests: XCTestCase {
+    func testFindsLinksInLocationAndNotes() {
+        XCTAssertEqual(MeetingLink.find(in: [nil, "https://meet.google.com/abc-defg-hij"])?.platform, .googleMeet)
+        let zoom = MeetingLink.find(in: ["Room 4", "Join Zoom Meeting\nhttps://us02web.zoom.us/j/8123456789?pwd=AbC.1 \nMeeting ID: 812"])
+        XCTAssertEqual(zoom?.platform, .zoom)
+        XCTAssertEqual(zoom?.url.absoluteString, "https://us02web.zoom.us/j/8123456789?pwd=AbC.1")
+        XCTAssertEqual(MeetingLink.find(in: ["<https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=1>"])?.platform, .teams)
+    }
+
+    func testPrefersEarlierFieldsAndIgnoresOtherLinks() {
+        XCTAssertNil(MeetingLink.find(in: ["https://docs.google.com/document/d/123", "Office, 3rd floor"]))
+        let link = MeetingLink.find(in: ["https://meet.google.com/aaa-bbbb-ccc", "https://zoom.us/j/1"])
+        XCTAssertEqual(link?.platform, .googleMeet)
+    }
+}

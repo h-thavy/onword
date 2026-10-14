@@ -48,6 +48,7 @@ struct NotetakerPage: View {
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 10) {
+            UpcomingSection()
             HStack {
                 Text("Past notes").font(Theme.sans(13, .semibold))
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -167,7 +168,8 @@ private struct MeetingDetail: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(item: Binding(get: { renaming.map(IdentifiedString.init) }, set: { renaming = $0?.value })) { item in
-            RenameSheet(name: $newName, original: meeting.name(for: item.value)) {
+            RenameSheet(name: $newName, original: meeting.name(for: item.value),
+                        suggestions: suggestions(excluding: item.value)) {
                 rename(item.value, to: newName.trimmingCharacters(in: .whitespaces))
                 renaming = nil
             } cancel: { renaming = nil }
@@ -270,6 +272,14 @@ private struct MeetingDetail: View {
             }
             .textSelection(.enabled)
         }
+    }
+
+    /// Names from the calendar invite and the call app that aren't used by another speaker yet.
+    private func suggestions(excluding speaker: String) -> [String] {
+        let used = Set(meeting.speakers.filter { $0 != speaker }.map { meeting.name(for: $0).lowercased() })
+        var seen = Set<String>()
+        return ((meeting.attendees ?? []) + (meeting.participants ?? []))
+            .filter { !used.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted }
     }
 
     /// Renaming a speaker to a name another speaker already has means "same person": merge them.
@@ -446,6 +456,7 @@ private struct SegmentRow: View {
 private struct RenameSheet: View {
     @Binding var name: String
     let original: String
+    var suggestions: [String] = []
     let save: () -> Void
     let cancel: () -> Void
 
@@ -457,6 +468,17 @@ private struct RenameSheet: View {
                 .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
                 .onSubmit(save)
+            if !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionLabel(text: "From the invite")
+                    FlowRow(spacing: 6) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            Button(suggestion) { name = suggestion }
+                                .buttonStyle(PillButtonStyle(prominent: name == suggestion))
+                        }
+                    }
+                }
+            }
             Text("Use a name another speaker already has to merge them into one person.")
                 .font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary)
             HStack {
@@ -521,5 +543,123 @@ enum SpeakerColor {
         }
         let hash = speaker.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
         return palette[hash % palette.count]
+    }
+}
+
+/// Today's and tomorrow's meetings from the calendar, with one-click Join & Record.
+private struct UpcomingSection: View {
+    @ObservedObject private var calendar = CalendarService.shared
+    @ObservedObject private var google = GoogleCalendar.shared
+    @ObservedObject private var recorder = MeetingRecorder.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Upcoming").font(Theme.sans(13, .semibold))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(Theme.selected))
+                Spacer()
+            }
+            if google.isConnected || calendar.access == .granted {
+                if calendar.upcoming.isEmpty {
+                    Text("No more meetings today or tomorrow.").font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+                        .padding(.horizontal, 10)
+                } else {
+                    ForEach(groups, id: \.day) { group in
+                        SectionLabel(text: group.day).padding(.leading, 10).padding(.top, 4)
+                        ForEach(group.meetings) { meeting in
+                            UpcomingRow(meeting: meeting, recording: recorder.isRecording)
+                        }
+                    }
+                }
+            } else {
+                ConnectCalendarCard()
+            }
+        }
+        .padding(.bottom, 6)
+    }
+
+    private var groups: [(day: String, meetings: [UpcomingMeeting])] {
+        var result: [(String, [UpcomingMeeting])] = []
+        for meeting in calendar.upcoming.prefix(8) {
+            let day = HistoryStore.dayLabel(meeting.start)
+            if result.last?.0 == day { result[result.count - 1].1.append(meeting) } else { result.append((day, [meeting])) }
+        }
+        return result.map { (day: $0.0, meetings: $0.1) }
+    }
+}
+
+private struct UpcomingRow: View {
+    let meeting: UpcomingMeeting
+    let recording: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2).fill(Color(nsColor: meeting.calendarColor)).frame(width: 3, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.title).font(Theme.sans(13.5, .semibold)).lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(timeRange)
+                    if let platform = meeting.platform { Text("· \(platform.title)") }
+                    if !meeting.attendees.isEmpty { Text("· \(meeting.attendees.count + 1) people") }
+                }
+                .font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if !recording, meeting.isNow || hovering {
+                Button(meeting.joinURL != nil ? "Join & Record" : "Record") {
+                    CalendarService.shared.joinAndRecord(meeting)
+                }
+                .buttonStyle(PillButtonStyle(prominent: meeting.isNow))
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(hovering ? Theme.hover : .clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .help(meeting.attendees.isEmpty ? meeting.title : "With " + meeting.attendees.joined(separator: ", "))
+    }
+
+    private var timeRange: String {
+        if meeting.isNow { return "Now" }
+        let f = { (d: Date) in d.formatted(date: .omitted, time: .shortened).lowercased() }
+        return "\(f(meeting.start)) – \(f(meeting.end))"
+    }
+}
+
+/// "Connect Google Calendar" call to action (with the Mac's calendars as an alternative).
+struct ConnectCalendarCard: View {
+    @ObservedObject private var google = GoogleCalendar.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Connect Google Calendar").font(Theme.sans(13.5, .semibold))
+            Text("See upcoming meetings, join and take notes in one click, and get notes named after the event.")
+                .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    google.connect()
+                } label: {
+                    HStack(spacing: 6) {
+                        if google.isConnecting { ProgressView().controlSize(.mini) }
+                        Text(google.isConnecting ? "Waiting for Google…" : "Connect Google Calendar")
+                    }
+                }
+                .buttonStyle(.pill)
+                .disabled(!google.isConfigured || google.isConnecting)
+                Button("Use Mac Calendar") { CalendarService.shared.requestAccess() }
+                    .buttonStyle(.plain).font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+            }
+            if !google.isConfigured {
+                Text("This build has no Google sign-in configured (Resources/GoogleOAuth.plist).")
+                    .font(Theme.sans(11.5)).foregroundStyle(.orange)
+            } else if let error = google.lastError {
+                Text(error).font(Theme.sans(11.5)).foregroundStyle(.orange)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.accent.opacity(0.5)))
     }
 }

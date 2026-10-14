@@ -24,6 +24,9 @@ struct Meeting: Codable, Identifiable, Equatable {
     var platform: String?
     /// Names read from the call app's participant tiles.
     var participants: [String]?
+    /// From the calendar event this meeting was recorded for.
+    var calendarEventID: String?
+    var attendees: [String]?
     /// Notes written by the on-device model after the meeting.
     var summary: String?
     var decisions: [String]?

@@ -116,6 +116,17 @@ struct PillButtonStyle: ButtonStyle {
     var tint: Color?
 
     func makeBody(configuration: Configuration) -> some View {
+        PillBody(configuration: configuration, prominent: prominent, tint: tint)
+    }
+}
+
+private struct PillBody: View {
+    let configuration: ButtonStyleConfiguration
+    let prominent: Bool
+    let tint: Color?
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
         configuration.label
             .font(Theme.sans(13, .semibold))
             .padding(.horizontal, 14).padding(.vertical, 7)
@@ -124,7 +135,7 @@ struct PillButtonStyle: ButtonStyle {
                 Capsule().fill(prominent ? (tint ?? Theme.primary) : Theme.panel)
                     .overlay(Capsule().strokeBorder(prominent ? .clear : Theme.border))
             )
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
             .contentShape(Capsule())
     }
 }

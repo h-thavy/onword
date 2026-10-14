@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State var tab: HubRouter.SettingsTab
     @ObservedObject private var dictation = DictationController.shared
     @ObservedObject private var detector = MeetingDetector.shared
+    @ObservedObject private var calendar = CalendarService.shared
+    @ObservedObject private var google = GoogleCalendar.shared
     @Environment(\.dismiss) private var dismiss
     @State private var appearance = Appearance.current
 
@@ -45,6 +47,7 @@ struct SettingsView: View {
                         case .general: general
                         case .system: system
                         case .notetaker: notetaker
+                        case .connections: connections
                         }
                     }
                     .padding(.bottom, 20)
@@ -181,6 +184,82 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.pillQuiet)
             }
+        }
+    }
+
+    // MARK: Connections
+
+    @ViewBuilder
+    private var connections: some View {
+        group("Calendar") {
+            SettingsRow(title: "Google Calendar", detail: googleStatus) {
+                if google.isConnected {
+                    Button("Disconnect") { google.disconnect() }.buttonStyle(.pillQuiet)
+                } else {
+                    Button(google.isConnecting ? "Waiting for Google…" : "Connect") { google.connect() }
+                        .buttonStyle(.pill).disabled(!google.isConfigured || google.isConnecting)
+                }
+            }
+            SettingsRow(title: "Mac Calendar (iCloud, Outlook, Exchange)",
+                        detail: google.isConnected ? "Not used while Google Calendar is connected." : calendarStatus) {
+                switch calendar.access {
+                case .granted:
+                    Label("Allowed", systemImage: "checkmark.circle.fill").font(Theme.sans(13)).foregroundStyle(Theme.inkTertiary)
+                case .notDetermined:
+                    Button("Use") { calendar.requestAccess() }.buttonStyle(.pillQuiet)
+                case .denied:
+                    Button("Allow…") { CalendarService.openPrivacySettings() }.buttonStyle(.pillQuiet)
+                }
+            }
+            SettingsRow(title: "Remind me when a meeting starts", detail: "Offers to join the call and take notes.", last: true) {
+                Toggle("", isOn: $calendar.remindersEnabled).toggleStyle(.switch).labelsHidden().tint(Theme.primary)
+            }
+        }
+        if google.isConnected, !calendar.googleCalendars.isEmpty {
+            group("Calendars to show") {
+                ForEach(Array(calendar.googleCalendars.enumerated()), id: \.element.id) { index, item in
+                    SettingsRow(title: item.summary ?? item.id, detail: item.primary == true ? "Primary" : nil,
+                                last: index == calendar.googleCalendars.count - 1) {
+                        Toggle("", isOn: Binding(
+                            get: { !calendar.hiddenCalendarIDs.contains(item.id) },
+                            set: { shown in
+                                if shown { calendar.hiddenCalendarIDs.remove(item.id) } else { calendar.hiddenCalendarIDs.insert(item.id) }
+                            }))
+                        .toggleStyle(.switch).labelsHidden().tint(Theme.primary)
+                    }
+                }
+            }
+        } else if calendar.access == .granted, !calendar.calendars.isEmpty {
+            group("Calendars to show") {
+                ForEach(Array(calendar.calendars.enumerated()), id: \.element.calendarIdentifier) { index, item in
+                    SettingsRow(title: item.title, detail: item.source.title, last: index == calendar.calendars.count - 1) {
+                        Toggle("", isOn: Binding(
+                            get: { !calendar.hiddenCalendarIDs.contains(item.calendarIdentifier) },
+                            set: { shown in
+                                if shown { calendar.hiddenCalendarIDs.remove(item.calendarIdentifier) }
+                                else { calendar.hiddenCalendarIDs.insert(item.calendarIdentifier) }
+                            }))
+                        .toggleStyle(.switch).labelsHidden().tint(Color(nsColor: item.color))
+                    }
+                }
+            }
+        }
+    }
+
+    private var googleStatus: String {
+        if let email = google.connectedEmail { return "Connected as \(email). Read-only; upcoming meetings appear in Notetaker." }
+        if !google.isConfigured { return "Not available in this build (no Google sign-in configured)." }
+        if let error = google.lastError { return error }
+        return "Sign in with Google to see upcoming meetings, join in one click, and name notes after the event."
+    }
+
+    private var calendarStatus: String {
+        switch calendar.access {
+        case .granted:
+            let shown = calendar.calendars.filter { !calendar.hiddenCalendarIDs.contains($0.calendarIdentifier) }.count
+            return "Reading \(shown) calendar\(shown == 1 ? "" : "s"). Upcoming meetings appear in Notetaker."
+        case .notDetermined: return "See upcoming meetings, join in one click, and name notes after the event."
+        case .denied: return "Calendar access is off. Allow Onword in System Settings → Privacy & Security → Calendars."
         }
     }
 

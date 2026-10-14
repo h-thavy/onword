@@ -30,6 +30,10 @@
     <!-- EB Garamond and Figtree (SIL Open Font License), loaded from Contents/Resources/Fonts. -->
     <key>ATSApplicationFontsPath</key>
     <string>Fonts</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Onword shows your upcoming meetings, lets you join and take notes in one click, and names your notes after the event. Your calendar stays on this Mac.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

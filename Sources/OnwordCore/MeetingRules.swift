@@ -185,3 +185,28 @@ public enum ActionItemCheck {
             .map(String.init).filter { !stopwords.contains($0) && $0.count > 1 }
     }
 }
+
+/// Finds the video-call link in a calendar event (its URL, location or notes).
+public enum MeetingLink {
+    static let patterns: [(MeetingPlatform, String)] = [
+        (.googleMeet, #"https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}"#),
+        (.zoom, #"https://(?:[\w-]+\.)?zoom\.us/(?:j|my|w)/[\w?=&.\-/]+"#),
+        (.teams, #"https://teams\.(?:microsoft|live)\.com/(?:l/meetup-join|meet)/[^\s<>"]+"#),
+        (.webex, #"https://[\w-]+\.webex\.com/[^\s<>"]+"#),
+        (.slack, #"https://app\.slack\.com/huddle/[^\s<>"]+"#),
+        (.facetime, #"https://facetime\.apple\.com/join[^\s<>"]+"#),
+    ]
+
+    /// The first call link found, searching the given texts in order.
+    public static func find(in texts: [String?]) -> (url: URL, platform: MeetingPlatform)? {
+        for text in texts.compactMap({ $0 }) where !text.isEmpty {
+            for (platform, pattern) in patterns {
+                if let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]),
+                   let url = URL(string: String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;)>"))) {
+                    return (url, platform)
+                }
+            }
+        }
+        return nil
+    }
+}

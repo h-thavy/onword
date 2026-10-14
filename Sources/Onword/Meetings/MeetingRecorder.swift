@@ -37,10 +37,16 @@ final class MeetingRecorder: ObservableObject {
         isRecording ? stop() : start()
     }
 
-    func start(title: String? = nil) {
+    /// - Parameters:
+    ///   - title: explicit title; otherwise the calendar event happening now, otherwise the date.
+    ///   - calendarMeeting: the event being recorded (defaults to whatever is on the calendar now).
+    func start(title: String? = nil, calendarMeeting: UpcomingMeeting? = nil) {
         guard !isRecording else { return }
         startedAt = Date()
-        var meeting = Meeting(title: title ?? Meeting.defaultTitle(for: startedAt), startedAt: startedAt)
+        let event = calendarMeeting ?? CalendarService.shared.currentMeeting()
+        var meeting = Meeting(title: title ?? event?.title ?? Meeting.defaultTitle(for: startedAt), startedAt: startedAt)
+        meeting.calendarEventID = event?.id
+        meeting.attendees = event?.attendees
         try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
         let live = LiveTranscriber()
         self.live = live

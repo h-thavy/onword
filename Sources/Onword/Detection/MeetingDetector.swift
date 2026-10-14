@@ -103,7 +103,9 @@ final class MeetingDetector: ObservableObject {
 
     private func record(_ meeting: DetectedMeeting) {
         recordingFollowsCall = true
-        MeetingRecorder.shared.start(title: "\(meeting.platform.title) – \(Meeting.defaultTitle(for: Date()).replacingOccurrences(of: "Meeting – ", with: ""))")
+        // Prefer the calendar event's title; fall back to "Zoom – Tue 13 Oct, 15:49".
+        let fallback = "\(meeting.platform.title) – \(Meeting.defaultTitle(for: Date()).replacingOccurrences(of: "Meeting – ", with: ""))"
+        MeetingRecorder.shared.start(title: CalendarService.shared.currentMeeting()?.title ?? fallback)
     }
 
     /// Call apps currently on the microphone.

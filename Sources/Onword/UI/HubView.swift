@@ -32,7 +32,7 @@ final class HubRouter: ObservableObject {
     }
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general, system, notetaker
+        case general, system, notetaker, connections
         var id: String { rawValue }
         var title: String { rawValue.capitalized }
     }
