@@ -16,13 +16,24 @@ struct FlowBarView: View {
         ZStack(alignment: .topLeading) {
             Color.clear
             if !(model.concealed && (model.mode == .rest || model.mode == .ready)) {
-                pill(layout)
-                if let record = layout.record {
-                    recordButton
-                        .frame(width: record.width, height: record.height)
-                        .offset(x: record.minX, y: record.minY)
-                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
+                // Anchored at the bottom centre (14 pt above the Dock), so changes in size grow up and
+                // outward from where the bar sits rather than sliding in from a corner.
+                ZStack(alignment: .bottom) {
+                    Color.clear
+                    pill(layout)
+                        .background(alignment: .trailing) {
+                            if layout.record != nil {
+                                recordButton
+                                    .frame(width: 30, height: 30)
+                                    .offset(x: 32)   // 2 pt to the right of the mic pill
+                                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                            }
+                        }
+                        .padding(.bottom, FlowBarLayout.bottomInset)
                 }
+                .frame(width: FlowBarLayout.canvas.width, height: FlowBarLayout.canvas.height)
+                .animation(model.reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.78), value: model.mode)
+                .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
             }
             if let tooltip = model.tooltip {
                 TooltipBubble(tooltip: tooltip, anchor: layout.anchor(for: tooltip.target))
@@ -52,7 +63,6 @@ struct FlowBarView: View {
             content(layout).clipShape(Capsule())
         }
         .frame(width: rect.width, height: rect.height)
-        .offset(x: rect.minX, y: rect.minY)
     }
 
     private var rimColor: Color {

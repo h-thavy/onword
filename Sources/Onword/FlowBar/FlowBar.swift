@@ -195,9 +195,7 @@ final class FlowBar {
         let mode = currentMode()
         if model.mode != mode {
             let leavingRest = model.mode == .rest
-            withAnimation(model.reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82)) {
-                model.mode = mode
-            }
+            model.mode = mode   // FlowBarView animates the size change from the bar's bottom centre
             if leavingRest { reposition() }
             // Buttons move or disappear between modes: the old hover target and tooltip no longer apply.
             setHover(hoverTarget())
