@@ -56,7 +56,7 @@ struct OnboardingView: View {
 
     private static var initialStep: Step {
         if let name = Onboarding.debugStep,
-           let step = Step.allCases.first(where: { "\($0)" == name.replacingOccurrences(of: "-pressed", with: "") }) {
+           let step = Step.allCases.first(where: { "\($0)" == name.replacingOccurrences(of: "-pressed", with: "").replacingOccurrences(of: "-picker", with: "") }) {
             return step
         }
         guard let saved = Onboarding.savedStep.flatMap(Step.init(rawValue:)) else { return .welcome }
@@ -196,7 +196,8 @@ private struct LanguagesStep: View {
     @ObservedObject private var dictation = DictationController.shared
     @State private var selection: [String] = DictationController.shared.selectedLanguages.isEmpty
         ? ["en"] : DictationController.shared.selectedLanguages
-    @State private var showAll = false
+    /// Test hook: ONWORD_ONBOARDING_STEP=languages-picker opens the full list.
+    @State private var showAll = Onboarding.debugStep == "languages-picker"
 
     /// This Mac's languages first, then common ones, plus anything picked in the full list.
     private var suggestions: [String] {

@@ -150,6 +150,7 @@ struct LanguagePicker: View {
                 .frame(width: 224, height: 413)
             }
         }
+        .frame(width: 804)   // 560 grid + 20 gap + 224 column; never stretch to a wide window
         .padding(24)
         .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panel))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border))
