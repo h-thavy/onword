@@ -23,7 +23,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Onword records the other people in your call (your Mac's audio output) when you record a meeting. Audio stays on this Mac.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

@@ -100,6 +100,17 @@ final class DictationController: ObservableObject {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
     }
 
+    /// The languages picked in Settings; empty means auto-detect. One language → dictate in it;
+    /// several → detect which one is spoken.
+    @Published private(set) var selectedLanguages: [String] {
+        didSet { UserDefaults.standard.set(selectedLanguages, forKey: "selectedLanguages") }
+    }
+
+    func chooseLanguages(_ codes: [String]) {
+        selectedLanguages = codes
+        chooseLanguage(codes.count == 1 ? codes[0] : "auto")
+    }
+
     /// The language dictation uses now ("en" with an English-only model).
     var activeLanguage: String { model.isEnglishOnly ? "en" : language }
 
@@ -204,7 +215,9 @@ final class DictationController: ObservableObject {
         let savedModel = Transcriber.Model(rawValue: defaults.string(forKey: "model") ?? "") ?? .smallEnglish
         model = savedModel
         // English-only models always dictate English; earlier versions stored "auto" for them.
-        language = savedModel.isEnglishOnly ? "en" : (defaults.string(forKey: "language") ?? "auto")
+        let savedLanguage = savedModel.isEnglishOnly ? "en" : (defaults.string(forKey: "language") ?? "auto")
+        language = savedLanguage
+        selectedLanguages = defaults.stringArray(forKey: "selectedLanguages") ?? (savedLanguage == "auto" ? [] : [savedLanguage])
         removeFillers = defaults.object(forKey: "removeFillers") as? Bool ?? true
         microphoneUID = defaults.string(forKey: AudioRecorder.microphoneKey)
     }

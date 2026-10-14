@@ -22,19 +22,18 @@ final class HubRouter: ObservableObject {
 
         var icon: String {
             switch self {
-            case .dictation: "waveform"
-            case .notetaker: "person.2"
-            case .dictionary: "character.book.closed"
-            case .snippets: "text.quote"
-            case .scratchpad: "square.and.pencil"
+            case .dictation: "mic"
+            case .notetaker: "smallcircle.filled.circle"
+            case .dictionary: "book.closed"
+            case .snippets: "scissors"
+            case .scratchpad: "note.text"
             }
         }
     }
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general, system, notetaker, connections
+        case general, system, notetaker, connections, privacy
         var id: String { rawValue }
-        var title: String { rawValue.capitalized }
     }
 
     @Published var page: Page = .dictation
@@ -62,9 +61,7 @@ struct HubView: View {
         .font(Theme.sans(14))
         .foregroundStyle(Theme.ink)
         .frame(minWidth: 920, minHeight: 600)
-        .sheet(item: $router.settingsTab) { tab in
-            SettingsView(tab: tab)
-        }
+        .overlay { SettingsOverlay(router: router) }
     }
 
     @ViewBuilder

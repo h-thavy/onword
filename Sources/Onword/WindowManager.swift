@@ -73,12 +73,22 @@ final class WindowManager: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Same size as Wispr Flow's main window: 1350×850 (at least 1140×750), shrunk to fit smaller screens.
+    private static func hubSize(minimum: Bool) -> NSSize {
+        let wanted = minimum ? NSSize(width: 1140, height: 750) : NSSize(width: 1350, height: 850)
+        guard let area = NSScreen.main?.visibleFrame else { return wanted }
+        return NSSize(width: min(wanted.width, area.width - 20), height: min(wanted.height, area.height - 20))
+    }
+
     private func makeHub() -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 720),
+            contentRect: NSRect(origin: .zero, size: Self.hubSize(minimum: false)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.contentViewController = NSHostingController(rootView: HubView())
+        let hosting = NSHostingController(rootView: HubView())
+        hosting.sizingOptions = []   // otherwise SwiftUI shrinks the window to the view's minimum size
+        window.contentViewController = hosting
+        window.setContentSize(Self.hubSize(minimum: false))
         window.title = "Onword"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -87,8 +97,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
         window.backgroundColor = NSColor(Theme.frame)
         window.appearance = Appearance.current.nsAppearance
         window.delegate = self
-        window.setFrameAutosaveName("Onword.Hub")
-        if !window.setFrameUsingName("Onword.Hub") { window.center() }
+        window.contentMinSize = Self.hubSize(minimum: true)
+        window.center()   // like Wispr Flow, opens centred at the default size rather than where it was left
         return window
     }
 

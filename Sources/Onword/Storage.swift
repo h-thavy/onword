@@ -62,9 +62,47 @@ extension Notification.Name {
     static let historyChanged = Notification.Name("Onword.historyChanged")
 }
 
+/// How long dictation history is kept (Settings › Data and Privacy).
+enum HistoryRetention: String, CaseIterable, Identifiable {
+    case keep, day, never
+    static let key = "historyRetention"
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .keep: "Store data locally"
+        case .day: "Auto-delete every 24 hours"
+        case .never: "Never store data"
+        }
+    }
+    static var current: HistoryRetention {
+        HistoryRetention(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .keep
+    }
+}
+
 enum History {
+    /// Applies the retention setting: deletes everything ("never") or entries older than a day.
+    static func prune() {
+        defer { NotificationCenter.default.post(name: .historyChanged, object: nil) }
+        switch HistoryRetention.current {
+        case .keep: return
+        case .never: try? FileManager.default.removeItem(at: AppPaths.history)
+        case .day:
+            guard let data = try? Data(contentsOf: AppPaths.history) else { return }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let cutoff = Date().addingTimeInterval(-24 * 3600)
+            let kept = data.split(separator: 0x0A).filter { line in
+                (try? decoder.decode(HistoryEntry.self, from: Data(line)))?.date ?? .distantPast > cutoff
+            }
+            var output = Data(kept.joined(separator: [0x0A]))
+            if !output.isEmpty { output.append(0x0A) }
+            try? output.write(to: AppPaths.history, options: .atomic)
+        }
+    }
+
     static func append(_ entry: HistoryEntry) {
         defer { NotificationCenter.default.post(name: .historyChanged, object: nil) }
+        guard HistoryRetention.current != .never else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard var line = try? encoder.encode(entry) else { return }

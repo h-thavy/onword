@@ -33,9 +33,33 @@ struct OnwordApp: App {
     }
 }
 
+/// Onword shows in the Dock like a regular app (Settings › System › "Show app in Dock"); off, it lives
+/// only in the menu bar.
+@MainActor
+enum DockIcon {
+    static let key = "showInDock"
+    static var isShown: Bool {
+        get { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: key); apply() }
+    }
+
+    static func apply() {
+        NSApp.setActivationPolicy(isShown ? .regular : .accessory)
+        if !isShown { NSApp.activate(ignoringOtherApps: true) }   // switching to accessory can hide our windows
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Clicking the Dock icon opens the main window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated { WindowManager.shared.show() }
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
+            DockIcon.apply()
+            History.prune()
             DictationController.shared.start()
             if !Onboarding.isComplete || Onboarding.debugStep != nil {
                 WindowManager.shared.showOnboarding()   // asks for permissions step by step
