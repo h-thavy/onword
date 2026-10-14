@@ -163,12 +163,15 @@ private struct StatusCard: View {
                     Text("Loading speech model…").font(Theme.sans(12.5))
                 }
             default:
-                HStack(spacing: 4) {
-                    Text("Hold").font(Theme.sans(12.5))
-                    KeyChip(text: dictation.hotkey.chip)
-                    Text("and speak").font(Theme.sans(12.5))
+                // The real key, drawn as a Mac keycap; it lights up while you hold it.
+                HStack(spacing: 10) {
+                    MiniKeycap(key: dictation.hotkey, pressed: dictation.hotkeyIsDown)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hold to speak").font(Theme.sans(12.5, .medium)).foregroundStyle(Theme.ink)
+                        Text("Double-tap: hands-free").font(Theme.sans(11.5)).foregroundStyle(Theme.inkTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
                 }
-                Text("Double-tap for hands-free").font(Theme.sans(11.5)).foregroundStyle(Theme.inkTertiary)
             }
         }
         .foregroundStyle(Theme.inkSecondary)

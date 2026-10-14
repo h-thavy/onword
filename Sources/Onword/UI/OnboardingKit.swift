@@ -259,7 +259,9 @@ struct Keycap: View {
     let key: HotkeyMonitor.Key
     let pressed: Bool
 
-    private var width: CGFloat {
+    private var width: CGFloat { Self.width(for: key) }
+
+    static func width(for key: HotkeyMonitor.Key) -> CGFloat {
         switch key {
         case .fn: 60
         case .rightOption: 70
@@ -299,6 +301,20 @@ struct Keycap: View {
         .background(RoundedRectangle(cornerRadius: 5).fill(pressed ? OB.lilac : .white))
         .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(pressed ? OB.plum : OB.muted, lineWidth: 1.43))
         .shadow(color: OB.hex(0x101828).opacity(pressed ? 0 : 0.1), radius: 7, y: 9.5)
+    }
+}
+
+/// The keycap at a smaller size (e.g. 0.6), laid out at its scaled size.
+struct MiniKeycap: View {
+    let key: HotkeyMonitor.Key
+    let pressed: Bool
+    var scale: CGFloat = 0.6
+
+    var body: some View {
+        Keycap(key: key, pressed: pressed)
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: Keycap.width(for: key) * scale, height: 60 * scale, alignment: .topLeading)
+            .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 
