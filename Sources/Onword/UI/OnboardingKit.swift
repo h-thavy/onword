@@ -374,3 +374,82 @@ extension HotkeyMonitor.Key {
         }
     }
 }
+
+// MARK: - Any key, and key combinations
+
+/// One key of a shortcut, drawn like the real Mac key: modifiers with their symbol and name, letters centred.
+struct KeyFace: View {
+    let key: String   // "⌃", "⌥", "⌘", "⇧", or a letter/word like "S", "Esc"
+    var pressed = false
+
+    private var spec: (topLeft: String?, topRight: String?, bottomLeft: String?, bottomRight: String?, center: String?, width: CGFloat) {
+        switch key {
+        case "⌃": ("⌃", nil, "control", nil, nil, 70)
+        case "⌥": (nil, "⌥", nil, "option", nil, 70)
+        case "⌘": (nil, "⌘", nil, "command", nil, 90)
+        case "⇧": (nil, nil, "shift", nil, nil, 90)
+        default: (nil, nil, nil, nil, key, key.count > 1 ? 70 : 60)
+        }
+    }
+
+    static func width(for key: String) -> CGFloat { KeyFace(key: key).spec.width }
+
+    var body: some View {
+        let s = spec
+        ZStack {
+            if let center = s.center {
+                Text(center).font(.system(size: 18, weight: .medium))
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        if let tl = s.topLeft { Text(tl).font(.system(size: 16)) }
+                        Spacer()
+                        if let tr = s.topRight { Text(tr).font(.system(size: 16)) }
+                    }
+                    Spacer(minLength: 0)
+                    HStack {
+                        if let bl = s.bottomLeft { Text(bl) }
+                        Spacer()
+                        if let br = s.bottomRight { Text(br) }
+                    }
+                }
+                .font(.system(size: 12.4))
+            }
+        }
+        .foregroundStyle(pressed ? OB.hex(0x30302F) : OB.muted)
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .frame(width: s.width, height: 60)
+        .background(RoundedRectangle(cornerRadius: 5).fill(pressed ? OB.lilac : .white))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(pressed ? OB.plum : OB.muted, lineWidth: 1.43))
+        .shadow(color: OB.hex(0x101828).opacity(pressed ? 0 : 0.1), radius: 7, y: 9.5)
+    }
+}
+
+/// A shortcut such as "⌃⌥S" drawn as keycaps side by side (control, option, S), at `scale` of full size.
+struct KeyCombo: View {
+    let text: String
+    var scale: CGFloat = 0.45
+
+    /// "⌃⌥S" → ["⌃", "⌥", "S"]; a word like "Esc" stays one key.
+    private var keys: [String] {
+        let modifiers: Set<Character> = ["⌃", "⌥", "⌘", "⇧"]
+        var result: [String] = []
+        var rest = ""
+        for character in text where character != " " && character != "+" {
+            if modifiers.contains(character) { result.append(String(character)) } else { rest.append(character) }
+        }
+        if !rest.isEmpty { result.append(rest.count == 1 ? rest.uppercased() : rest) }
+        return result
+    }
+
+    var body: some View {
+        HStack(spacing: 5 * scale / 0.45) {
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
+                KeyFace(key: key)
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: KeyFace.width(for: key) * scale, height: 60 * scale, alignment: .topLeading)
+            }
+        }
+        .accessibilityLabel(text)
+    }
+}

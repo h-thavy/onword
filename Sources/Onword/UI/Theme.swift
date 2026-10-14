@@ -226,13 +226,9 @@ struct IconButton: View {
 struct KeyChip: View {
     let text: String
 
-    var body: some View {
-        Text(text).font(Theme.sans(12, .semibold)).foregroundStyle(Theme.ink)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 5).fill(Theme.panel))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Theme.border))
-            .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
-    }
+    /// Drawn as keycaps (a combination like ⌃⌥S becomes control, option and S keys), like the shortcut key.
+    var body: some View { KeyCombo(text: text, scale: 0.42) }
+
 }
 
 /// Rounded search field.

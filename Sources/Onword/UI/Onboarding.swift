@@ -843,9 +843,9 @@ private struct DoneStep: View {
             OBCard(widget: true) {
                 tip(AnyView(InlineKey(key: dictation.hotkey, size: 15)), "Hold to dictate in any app. Double-tap for hands-free, Esc to cancel.")
                 Divider().overlay(OB.sand)
-                tip(AnyView(chip("⌃⌥S")), "Open the Scratchpad for quick notes.")
+                tip(AnyView(KeyCombo(text: "⌃⌥S", scale: 0.5)), "Open the Scratchpad for quick notes.")
                 Divider().overlay(OB.sand)
-                tip(AnyView(chip("⌥M")), "Start or stop Notetaker in a call. Onword can also notice calls and ask.")
+                tip(AnyView(KeyCombo(text: "⌥M", scale: 0.5)), "Start or stop Notetaker in a call. Onword can also notice calls and ask.")
             }
         } footer: {
             FooterButton(title: "Open Onword") {
@@ -856,16 +856,9 @@ private struct DoneStep: View {
         }
     }
 
-    private func chip(_ text: String) -> some View {
-        Text(text).font(Theme.sans(15, .medium)).foregroundStyle(OB.hex(0x30302F))
-            .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: 4).fill(OB.background))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(OB.chipBorder))
-    }
-
     private func tip(_ key: AnyView, _ text: String) -> some View {
         HStack(spacing: 16) {
-            key.frame(width: 80, alignment: .leading)
+            key.frame(width: 130, alignment: .leading)
             Text(text).font(Theme.sans(15)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }

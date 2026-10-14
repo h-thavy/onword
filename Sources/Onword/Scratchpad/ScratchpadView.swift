@@ -13,12 +13,10 @@ struct ScratchpadPage: View {
         PageScroll {
             PageHeader(title: "Scratchpad", badge: "Beta") {
                 Button { ScratchpadWindow.shared.show() } label: {
-                    Text("⌃⌥S")
-                        .font(Theme.sans(15, .medium)).foregroundStyle(Theme.inkSecondary)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .frame(height: 36)
-                        .background(Capsule().fill(Theme.shortcutPill))
-                        .overlay(Capsule().strokeBorder(Theme.shortcutPillRing))
+                    HStack(spacing: 8) {
+                        KeyCombo(text: "⌃⌥S", scale: 0.42)
+                        Text("to open").font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
+                    }
                 }
                 .buttonStyle(.plainPointer)
                 .help("Open the Scratchpad window from anywhere")
