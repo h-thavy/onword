@@ -13,9 +13,10 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resourc
 TAG="v$VERSION"
 
 swift test
-# Public builds leave out the Google sign-in client until the Google project is verified
-# (set INCLUDE_GOOGLE_OAUTH=1 to ship it); users connect Google via Mac Calendar instead.
-OUT_DIR=dist/build SIGN_IDENTITY=- SKIP_GOOGLE_OAUTH=$([[ "${INCLUDE_GOOGLE_OAUTH:-0}" == "1" ]] && echo 0 || echo 1) \
+# Releases ship the Google sign-in client (Resources/GoogleOAuth.plist, git-ignored) so "Connect Google
+# Calendar" works; set INCLUDE_GOOGLE_OAUTH=0 to leave it out. Until Google verifies the project, sign-in
+# is limited to its test users (or shows Google's "unverified app" warning once published).
+OUT_DIR=dist/build SIGN_IDENTITY=- SKIP_GOOGLE_OAUTH=$([[ "${INCLUDE_GOOGLE_OAUTH:-1}" == "1" ]] && echo 0 || echo 1) \
   scripts/build-app.sh
 [[ -f dist/build/Onword.app/Contents/Resources/GoogleOAuth.plist ]] && echo "note: Google sign-in client INCLUDED in this release"
 codesign --verify --deep --strict dist/build/Onword.app

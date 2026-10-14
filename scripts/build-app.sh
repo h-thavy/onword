@@ -30,7 +30,7 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"   # regenerate: swift scripts/make-icon.swift
 # Google sign-in for "Connect Google Calendar" (git-ignored; see Resources/GoogleOAuth.example.plist).
-# Releases set SKIP_GOOGLE_OAUTH=1 until the Google project is verified for public sign-in.
+# Releases include it unless INCLUDE_GOOGLE_OAUTH=0 (see scripts/release.sh).
 if [[ -f Resources/GoogleOAuth.plist && "${SKIP_GOOGLE_OAUTH:-0}" != "1" ]]; then
   cp Resources/GoogleOAuth.plist "$APP/Contents/Resources/GoogleOAuth.plist"
 else
