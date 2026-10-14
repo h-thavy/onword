@@ -514,17 +514,21 @@ struct PopMenuButton<Label: View>: View {
     var alignment: HorizontalAlignment = .trailing
     /// The dark menu of the Flow Bar's reminder pill.
     var dark = false
+    /// Off: the caller's button style applies (e.g. a setup button that opens a menu).
+    var plain = true
     var onOpen: (() -> Void)?
     @ViewBuilder var label: () -> Label
     @State private var anchor = AnchorBox()
 
     var body: some View {
-        Button {
+        let button = Button {
             onOpen?()
             PopMenu.shared.show(items, below: anchor.view, alignment: alignment, dark: dark)
         } label: { label() }
-            .buttonStyle(.plainPointer)
-            .background(AnchorReader(box: anchor))
+        Group {
+            if plain { button.buttonStyle(.plainPointer) } else { button }
+        }
+        .background(AnchorReader(box: anchor))
     }
 }
 

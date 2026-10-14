@@ -36,8 +36,12 @@ final class AudioRecorder {
     var onSamples: (([Float]) -> Void)?
     /// Keep everything in memory for `stop()`. Meetings turn this off and write to disk instead.
     var keepsSamples = true
-    /// The microphone chosen in the menu (Core Audio UID), or nil to follow the system default.
-    var preferredDeviceUID: String? { UserDefaults.standard.string(forKey: Self.microphoneKey) }
+    /// The microphone chosen in Settings (Core Audio UID or Auto-detect), or nil for the default.
+    /// Notetaker always uses Auto-detect (the Mac's default input), as in Wispr Flow.
+    var usesAutoDetect = false
+    var preferredDeviceUID: String? {
+        usesAutoDetect ? AudioDevices.systemDefault : UserDefaults.standard.string(forKey: Self.microphoneKey)
+    }
     static let microphoneKey = "microphoneUID"
 
     private var engine: AVAudioEngine?

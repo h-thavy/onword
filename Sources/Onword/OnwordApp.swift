@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] {   // test hook
                 WindowManager.shared.show()
-                HubRouter.shared.settingsTab = page == "languages" ? .general : HubRouter.SettingsTab(rawValue: page) ?? .general
+                HubRouter.shared.settingsTab = ["languages", "microphone"].contains(page) ? .general : HubRouter.SettingsTab(rawValue: page) ?? .general
             }
             _ = DictionaryStore.shared   // loads (and migrates) the dictionary file
             MeetingDetector.shared.start()

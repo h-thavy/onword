@@ -170,39 +170,6 @@ struct SettingsSwitch: View {
     }
 }
 
-/// A 36 pt dropdown trigger with a 1 pt outline, showing the current value; opens a native menu.
-struct SettingsSelect<Items: View>: View {
-    let value: String
-    @ViewBuilder var items: () -> Items
-
-    var body: some View {
-        Menu { items() } label: {
-            HStack {
-                Text(value).font(Theme.sans(15)).lineLimit(1)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(SelectTriggerStyle())
-        .menuIndicator(.hidden)
-    }
-}
-
-private struct SelectTriggerStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { styledBody(configuration).pointerCursor() }
-
-    @ViewBuilder private func styledBody(_ configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, 12).frame(height: 36)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 6).fill(configuration.isPressed ? Theme.frame : Theme.panel))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
-            .foregroundStyle(Theme.ink)
-            .contentShape(Rectangle())
-    }
-}
-
 /// A dialog on a dimmed backdrop inside Settings: 24 pt padding, radius 12, 18 pt title.
 struct SettingsDialog<Content: View>: View {
     let title: String

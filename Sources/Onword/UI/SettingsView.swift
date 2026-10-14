@@ -62,8 +62,10 @@ struct SettingsView: View {
         }
         .onAppear {
             updates.checkIfStale()
-            if ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] == "languages" {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { dialog = .languages }
+            switch ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] {
+            case "languages"?: DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { dialog = .languages }
+            case "microphone"?: DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { dialog = .microphone }
+            default: break
             }
         }
     }
@@ -176,25 +178,26 @@ struct SettingsView: View {
                     Button("Change") { dialog = .languages }.buttonStyle(SecondaryButtonStyle())
                 }
                 SettingsLine("Speed", "Runs on this Mac. More accurate models take longer to load.") {
-                    SettingsSelect(value: (dictation.pendingModel?.model.tier ?? dictation.model.tier).title) {
-                        ForEach(Transcriber.Model.Tier.allCases) { tier in
-                            Button("\(tier.title) — \(tier.detail)") { dictation.chooseTier(tier) }
-                        }
-                    }
+                    SettingsSelect(value: (dictation.pendingModel?.model.tier ?? dictation.model.tier).title,
+                                   options: Transcriber.Model.Tier.allCases.map { tier in
+                                       SelectOption(id: tier.title, title: tier.title, detail: tier.detail) { dictation.chooseTier(tier) }
+                                   },
+                                   menuWidth: 300)
                 }
                 SettingsLine("Remove filler words", "Drops “um”, “uh” and “hmm” from dictation.") {
                     SettingsSwitch(isOn: $dictation.removeFillers)
                 }
                 SettingsLine("Theme", last: true) {
-                    SettingsSelect(value: appearance.title) {
-                        ForEach(Appearance.allCases) { option in
-                            Button(option.title) {
-                                appearance = option
-                                Appearance.current = option
-                                WindowManager.shared.applyAppearance()
-                            }
-                        }
-                    }
+                    SettingsSelect(value: appearance.title,
+                                   options: Appearance.allCases.map { option in
+                                       SelectOption(id: option.rawValue, title: option.title,
+                                                    icon: option == .light ? "sun.max" : option == .dark ? "moon" : "desktopcomputer") {
+                                           appearance = option
+                                           Appearance.current = option
+                                           WindowManager.shared.applyAppearance()
+                                       }
+                                   },
+                                   selectedID: appearance.rawValue, style: .menu)
                 }
             }
             if let pending = dictation.pendingModel { PendingModelBanner(pending: pending) }
@@ -208,14 +211,7 @@ struct SettingsView: View {
         }
     }
 
-    private var microphoneDescription: String {
-        let active = AudioDevices.resolve(preference: dictation.microphoneUID)?.name ?? "the Mac's microphone"
-        switch dictation.microphoneUID {
-        case nil, AudioDevices.automatic?: return "Auto-detect · using \(active)"
-        case AudioDevices.systemDefault?: return "System default · \(active)"
-        default: return active
-        }
-    }
+    private var microphoneDescription: String { MicrophoneChoice.summary(dictation.microphoneUID) }
 
     private var languagesDescription: String {
         if let pending = dictation.pendingModel {
@@ -254,10 +250,10 @@ struct SettingsView: View {
             }
             SettingsSection(title: "Scratchpad") {
                 SettingsLine("Scratchpad open behavior", "What ⌃⌥S shows when you open the Scratchpad.", last: true) {
-                    SettingsSelect(value: scratchpadOpenBehavior == "newTab" ? "Open in new tab" : "Resume last note") {
-                        Button("Resume last note") { scratchpadOpenBehavior = "resume" }
-                        Button("Open in new tab") { scratchpadOpenBehavior = "newTab" }
-                    }
+                    SettingsSelect(value: scratchpadOpenBehavior == "newTab" ? "Open in new tab" : "Resume last note",
+                                   options: [SelectOption(id: "resume", title: "Resume last note") { scratchpadOpenBehavior = "resume" },
+                                             SelectOption(id: "newTab", title: "Open in new tab") { scratchpadOpenBehavior = "newTab" }],
+                                   selectedID: scratchpadOpenBehavior == "newTab" ? "newTab" : "resume")
                 }
             }
             SettingsSection(title: "Data") {
@@ -305,19 +301,21 @@ struct SettingsView: View {
             SettingsSection(title: "Meeting detection") {
                 SettingsLine("Notify before scheduled meetings start", "Offers to join the call and take notes.") {
                     SettingsSelect(value: calendar.remindersEnabled
-                                   ? (NotetakerSettings.reminderLeadOptions.first { $0.seconds == reminderLead }?.title ?? "Right before") : "Never") {
-                        ForEach(NotetakerSettings.reminderLeadOptions, id: \.seconds) { option in
-                            Button(option.title) {
-                                reminderLead = option.seconds
-                                calendar.remindersEnabled = option.seconds >= 0
-                            }
-                        }
-                    }
+                                   ? (NotetakerSettings.reminderLeadOptions.first { $0.seconds == reminderLead }?.title ?? "Right before") : "Never",
+                                   options: NotetakerSettings.reminderLeadOptions.map { option in
+                                       SelectOption(id: "\(option.seconds)", title: option.title) {
+                                           reminderLead = option.seconds
+                                           calendar.remindersEnabled = option.seconds >= 0
+                                       }
+                                   },
+                                   selectedID: calendar.remindersEnabled ? "\(reminderLead)" : "-1", style: .menu, menuWidth: 280)
                 }
                 SettingsLine("Automatically detect any call", "Zoom, Teams, FaceTime, Webex, Discord, or Meet / Teams / Slack huddles in a browser.") {
-                    SettingsSelect(value: detector.mode.title) {
-                        ForEach(MeetingDetector.Mode.allCases) { mode in Button(mode.title) { detector.mode = mode } }
-                    }
+                    SettingsSelect(value: detector.mode.title,
+                                   options: MeetingDetector.Mode.allCases.map { mode in
+                                       SelectOption(id: mode.rawValue, title: mode.title) { detector.mode = mode }
+                                   },
+                                   selectedID: detector.mode.rawValue, style: .menu)
                 }
                 SettingsLine("Start or stop Notetaker", "From any app.", last: true) {
                     KeyChip(text: "⌥M")
@@ -331,11 +329,11 @@ struct SettingsView: View {
                     SettingsSwitch(isOn: $stopWhenCallEnds)
                 }
                 SettingsLine("Maximum meeting length", "Notetaker checks in 5 minutes before it stops.", last: true) {
-                    SettingsSelect(value: NotetakerSettings.title(forMinutes: maxLength)) {
-                        ForEach(NotetakerSettings.maxLengthOptions, id: \.self) { minutes in
-                            Button(NotetakerSettings.title(forMinutes: minutes)) { maxLength = minutes }
-                        }
-                    }
+                    SettingsSelect(value: NotetakerSettings.title(forMinutes: maxLength),
+                                   options: NotetakerSettings.maxLengthOptions.map { minutes in
+                                       SelectOption(id: "\(minutes)", title: NotetakerSettings.title(forMinutes: minutes)) { maxLength = minutes }
+                                   },
+                                   selectedID: "\(maxLength)")
                 }
             }
             SettingsSection(title: "Notes") {
@@ -436,13 +434,13 @@ struct SettingsView: View {
                      description: "Everything Onword hears and writes stays on this Mac. Nothing is sent to a server.") {
             SettingsSection {
                 SettingsLine("Local data storage", "How Onword keeps your dictation history (the text, never audio).") {
-                    SettingsSelect(value: HistoryRetention(rawValue: historyRetention)?.title ?? HistoryRetention.keep.title) {
-                        ForEach(HistoryRetention.allCases) { option in
-                            Button(option.title) {
-                                if option == .never { dialog = .confirmNeverStore } else { historyRetention = option.rawValue; History.prune() }
-                            }
-                        }
-                    }
+                    SettingsSelect(value: HistoryRetention(rawValue: historyRetention)?.title ?? HistoryRetention.keep.title,
+                                   options: HistoryRetention.allCases.map { option in
+                                       SelectOption(id: "\(option.rawValue)", title: option.title) {
+                                           if option == .never { dialog = .confirmNeverStore } else { historyRetention = option.rawValue; History.prune() }
+                                       }
+                                   },
+                                   selectedID: "\(historyRetention)", menuWidth: 300)
                 }
                 SettingsLine("Your data", "Dictation history, notes, meetings and downloaded models.", last: true) {
                     Button("Open folder") { dictation.openDataFolder() }.buttonStyle(SecondaryButtonStyle())
@@ -468,26 +466,7 @@ struct SettingsView: View {
                 doneRow
             }
         case .microphone:
-            SettingsDialog(title: "Microphone", subtitle: "Used for dictation and Notetaker.", close: { dialog = nil }) {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        DialogOption(title: "Auto-detect", detail: "AirPods or a headset when connected, otherwise the Mac's microphone",
-                                     selected: dictation.microphoneUID == nil || dictation.microphoneUID == AudioDevices.automatic) {
-                            dictation.microphoneUID = AudioDevices.automatic
-                        }
-                        DialogOption(title: "System default", detail: AudioDevices.defaultInput?.name,
-                                     selected: dictation.microphoneUID == AudioDevices.systemDefault) {
-                            dictation.microphoneUID = AudioDevices.systemDefault
-                        }
-                        ForEach(AudioDevices.inputs()) { device in
-                            DialogOption(title: device.name, detail: device.isBluetooth ? "Bluetooth — call-quality audio while recording" : nil,
-                                         selected: dictation.microphoneUID == device.uid) { dictation.microphoneUID = device.uid }
-                        }
-                    }
-                }
-                .frame(maxHeight: 340)
-                doneRow
-            }
+            MicrophoneDialog { dialog = nil }
         case .languages:
             ZStack {
                 Theme.scrim.opacity(0.3).onTapGesture { dialog = nil }

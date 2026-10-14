@@ -88,15 +88,14 @@ struct HotkeyStep: View {
         }
     }
 
-    private func shortcutMenu(@ViewBuilder label: () -> some View) -> some View {
-        Menu {
-            ForEach(HotkeyMonitor.Key.allCases) { key in
-                Button(key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : "")) {
-                    dictation.hotkey = key
-                    presses = 0
-                }
+    private func shortcutMenu(@ViewBuilder label: @escaping () -> some View) -> some View {
+        PopMenuButton(items: HotkeyMonitor.Key.allCases.map { key in
+            PopMenuItem(title: key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : ""),
+                        icon: dictation.hotkey == key ? "checkmark" : nil) {
+                dictation.hotkey = key
+                presses = 0
             }
-        } label: { label() }
-            .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+        }, alignment: .leading, plain: false, label: label)
+        .fixedSize()
     }
 }

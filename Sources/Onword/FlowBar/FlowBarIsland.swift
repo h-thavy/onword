@@ -685,12 +685,21 @@ private struct MaxLengthCard: View {
                     .padding(.trailing, 24)
                 Text("We'll still check with you before ending it").font(Theme.sans(15)).foregroundStyle(Color(hex: 0xB3B2AD))
                     .padding(.top, 4)
-                Picker("", selection: $choice) {
-                    ForEach(NotetakerSettings.maxLengthOptions.filter { $0 > NotetakerSettings.maxLengthMinutes }, id: \.self) {
-                        Text(NotetakerSettings.title(forMinutes: $0)).tag($0)
+                // A dark select, like the card.
+                PopMenuButton(items: NotetakerSettings.maxLengthOptions.filter { $0 > NotetakerSettings.maxLengthMinutes }.map { minutes in
+                    PopMenuItem(title: NotetakerSettings.title(forMinutes: minutes), icon: choice == minutes ? "checkmark" : nil) { choice = minutes }
+                }, alignment: .leading, dark: true) {
+                    HStack {
+                        Text(NotetakerSettings.title(forMinutes: choice)).font(Theme.sans(15))
+                        Spacer()
+                        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
                     }
+                    .foregroundStyle(Color(hex: 0xFCFCFB))
+                    .padding(.horizontal, 12).frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(hex: 0x30302F)))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(hex: 0x464544)))
                 }
-                .labelsHidden().padding(.top, 12)
+                .padding(.top, 12)
                 Button {
                     NotetakerSettings.maxLengthMinutes = choice
                     FlowBarIsland.shared.hideToast()

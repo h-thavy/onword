@@ -13,25 +13,47 @@ enum AudioDevices {
         let isHeadset: Bool
         /// The Mac's own microphone.
         let isBuiltIn: Bool
+        /// Virtual and aggregate devices (Zoom, Teams, loopback drivers): listed under "Show other devices".
+        var isVirtual = false
+        var isUSB = false
+
+        /// AirPods are slow to start and less accurate for dictation (Wispr Flow warns about them too).
+        var isAirPods: Bool { name.localizedCaseInsensitiveContains("airpods") }
+
+        /// As Wispr Flow names them: "Built-in mic (recommended)", "hot pot (Bluetooth)".
+        var displayName: String {
+            if isBuiltIn { return "Built-in mic (recommended)" }
+            if isBluetooth { return "\(name) (Bluetooth)" }
+            if isUSB { return "\(name) (USB)" }
+            return name
+        }
     }
 
     /// The Mac's own microphone, if it has one.
     static var builtInInput: Device? { inputs().first(where: \.isBuiltIn) }
 
-    /// Microphone preference meaning "use a connected headset (AirPods, USB…), otherwise the system default".
-    /// Also what no preference (nil) means.
+    /// Earlier "headset first" preference; now treated as Auto-detect.
     static let automatic = "auto"
-    /// Microphone preference meaning "always follow macOS's default input".
+    /// "Auto-detect": whatever macOS uses ("From computer settings").
     static let systemDefault = "system"
 
-    /// The microphone to record from for a stored preference: nil/`automatic`, `systemDefault`, or a device UID.
-    /// A chosen device that isn't connected falls back to the system default.
+    /// The microphone to record from for a stored preference. No preference means the built-in mic
+    /// (Wispr Flow's recommendation); a chosen device that's gone falls back down your ranking
+    /// (Settings → Microphone → Edit Ranking), then to the built-in mic, then to the system default.
     static func resolve(preference: String?) -> Device? {
+        let all = inputs()
         switch preference {
-        case nil, automatic?: return inputs().first(where: \.isHeadset) ?? defaultInput
-        case systemDefault?: return defaultInput
-        case let uid?: return device(uid: uid) ?? defaultInput
+        case automatic?, systemDefault?:
+            return defaultInput
+        case let uid?:
+            if let chosen = all.first(where: { $0.uid == uid }) { return chosen }
+        case nil:
+            break
         }
+        for uid in MicRanking.uids where uid != systemDefault {
+            if let ranked = all.first(where: { $0.uid == uid }) { return ranked }
+        }
+        return all.first(where: \.isBuiltIn) ?? defaultInput
     }
 
     /// Calls `onChange` on the main queue when microphones are connected or disconnected.
@@ -117,8 +139,11 @@ enum AudioDevices {
         AudioObjectGetPropertyData(id, &address, 0, nil, &size, &transport)
         let bluetooth = transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
         let headset = bluetooth || transport == kAudioDeviceTransportTypeUSB
+        let virtual = transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate
+            || transport == kAudioDeviceTransportTypeAutoAggregate
         return Device(id: id, uid: uid, name: string(id, kAudioObjectPropertyName) ?? uid,
-                      isBluetooth: bluetooth, isHeadset: headset, isBuiltIn: transport == kAudioDeviceTransportTypeBuiltIn)
+                      isBluetooth: bluetooth, isHeadset: headset, isBuiltIn: transport == kAudioDeviceTransportTypeBuiltIn,
+                      isVirtual: virtual, isUSB: transport == kAudioDeviceTransportTypeUSB)
     }
 
     private static func string(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
@@ -128,5 +153,48 @@ enum AudioDevices {
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr, let value else { return nil }
         return value.takeRetainedValue() as String
+    }
+}
+
+/// Your microphone preference order (Settings → Microphone → Edit Ranking). Picking a mic moves it to the
+/// top; when it's disconnected Onword uses the next one in the list that's connected. Devices seen before
+/// stay in the list (dimmed when offline) until you forget them.
+enum MicRanking {
+    struct Entry: Codable, Equatable, Identifiable {
+        var uid: String
+        var name: String
+        var id: String { uid }
+    }
+
+    private static let key = "micRanking"
+
+    static var entries: [Entry] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+            return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
+        }
+        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: key) }
+    }
+
+    static var uids: [String] { entries.map(\.uid) }
+
+    /// The ranking with connected devices not in it yet appended, as the dialog shows it.
+    static func merged(with connected: [AudioDevices.Device]) -> [Entry] {
+        var list = entries
+        for device in connected where !device.isVirtual && !list.contains(where: { $0.uid == device.uid }) {
+            list.append(Entry(uid: device.uid, name: device.displayName))
+        }
+        if !list.contains(where: { $0.uid == AudioDevices.systemDefault }) {
+            list.insert(Entry(uid: AudioDevices.systemDefault, name: "Auto-detect"), at: min(1, list.count))
+        }
+        return list
+    }
+
+    /// Picking a microphone puts it first.
+    static func promote(_ uid: String, name: String, connected: [AudioDevices.Device]) {
+        var list = merged(with: connected)
+        list.removeAll { $0.uid == uid }
+        list.insert(Entry(uid: uid, name: name), at: 0)
+        entries = list
     }
 }

@@ -564,14 +564,13 @@ private struct ShortcutLine: View {
         HStack(spacing: 8) {
             Text("Your shortcut").foregroundStyle(OB.tertiary)
             InlineKey(key: dictation.hotkey, size: 15)
-            Menu {
-                ForEach(HotkeyMonitor.Key.allCases) { key in
-                    Button(key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : "")) {
-                        dictation.hotkey = key
-                    }
-                }
-            } label: { Text("Change").font(Theme.sans(15, .semibold)) }
-                .menuStyle(.borderlessButton).pointerCursor().menuIndicator(.hidden).fixedSize()
+            PopMenuButton(items: HotkeyMonitor.Key.allCases.map { key in
+                PopMenuItem(title: key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : ""),
+                            icon: dictation.hotkey == key ? "checkmark" : nil) { dictation.hotkey = key }
+            }, alignment: .leading) {
+                Text("Change").font(Theme.sans(15, .semibold)).foregroundStyle(OB.ink)
+            }
+            .fixedSize()
         }
         .font(Theme.sans(15))
     }

@@ -409,16 +409,17 @@ final class FlowBar {
         for item in [hide, always, settings, copy] { item.target = FlowBarMenuTarget.shared }
         menu.autoenablesItems = false
 
-        // Microphone ▸ Auto-detect / System default / each input, like the Settings dialog.
+        // Microphone ▸ the same choices as Settings → Microphone, in ranking order.
         let microphones = NSMenu()
-        let current = DictationController.shared.microphoneUID
-        let choices: [(String, String)] = [("Auto-detect", AudioDevices.automatic), ("System default", AudioDevices.systemDefault)]
-            + AudioDevices.inputs().map { ($0.name, $0.uid) }
-        for (name, uid) in choices {
-            let item = NSMenuItem(title: name, action: #selector(FlowBarMenuTarget.chooseMicrophone(_:)), keyEquivalent: "")
+        let connected = AudioDevices.inputs().filter { !$0.isVirtual }
+        let active = MicrophoneChoice.selectedUID(DictationController.shared.microphoneUID)
+        for entry in MicRanking.merged(with: connected) {
+            guard entry.uid == AudioDevices.systemDefault || connected.contains(where: { $0.uid == entry.uid }) else { continue }
+            let title = MicrophoneChoice.title(for: entry.uid, connected: connected)
+            let item = NSMenuItem(title: title, action: #selector(FlowBarMenuTarget.chooseMicrophone(_:)), keyEquivalent: "")
             item.target = FlowBarMenuTarget.shared
-            item.representedObject = uid
-            item.state = (current ?? AudioDevices.automatic) == uid ? .on : .off
+            item.representedObject = entry.uid
+            item.state = active == entry.uid ? .on : .off
             microphones.addItem(item)
         }
         let microphone = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
@@ -568,7 +569,7 @@ private final class FlowBarMenuTarget: NSObject {
     @objc func copyLast() { DictationController.shared.copyLastText() }
 
     @objc func chooseMicrophone(_ sender: NSMenuItem) {
-        if let uid = sender.representedObject as? String { DictationController.shared.microphoneUID = uid }
+        if let uid = sender.representedObject as? String { MicrophoneChoice.choose(uid) }
     }
 }
 

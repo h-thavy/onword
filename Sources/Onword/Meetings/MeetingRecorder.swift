@@ -37,6 +37,7 @@ final class MeetingRecorder: ObservableObject {
 
     private init() {
         mic.keepsSamples = false
+        mic.usesAutoDetect = true
     }
 
     func toggle() {
