@@ -8,6 +8,8 @@ actor Transcriber {
         case baseEnglish = "base.en"
         case smallEnglish = "small.en"
         case largeTurbo = "large-v3-v20240930_626MB"
+        case base = "base"     // multilingual
+        case small = "small"   // multilingual
 
         var id: String { rawValue }
 
@@ -16,6 +18,46 @@ actor Transcriber {
             case .baseEnglish: "Base (English) – fastest, ~150 MB"
             case .smallEnglish: "Small (English) – balanced, ~500 MB"
             case .largeTurbo: "Large v3 Turbo (99 languages) – best, ~630 MB"
+            case .base: "Base (99 languages) – fastest, ~150 MB"
+            case .small: "Small (99 languages) – balanced, ~500 MB"
+            }
+        }
+
+        /// Speed/accuracy choice shown in Settings; the language decides which model of that size is used.
+        enum Tier: String, CaseIterable, Identifiable {
+            case fast, balanced, best
+            var id: String { rawValue }
+            var title: String {
+                switch self {
+                case .fast: "Fast"
+                case .balanced: "Balanced"
+                case .best: "Most accurate"
+                }
+            }
+            var detail: String {
+                switch self {
+                case .fast: "Quickest, a little less accurate"
+                case .balanced: "Recommended"
+                case .best: "Slower to load, needs more memory"
+                }
+            }
+        }
+
+        var tier: Tier {
+            switch self {
+            case .baseEnglish, .base: .fast
+            case .smallEnglish, .small: .balanced
+            case .largeTurbo: .best
+            }
+        }
+
+        /// The model for a size and language: English gets the English-only model (faster and more accurate
+        /// for English); every other language shares one multilingual model of that size.
+        static func variant(_ tier: Tier, english: Bool) -> Model {
+            switch tier {
+            case .fast: english ? .baseEnglish : .base
+            case .balanced: english ? .smallEnglish : .small
+            case .best: .largeTurbo
             }
         }
 
@@ -23,8 +65,8 @@ actor Transcriber {
 
         var downloadSize: String {
             switch self {
-            case .baseEnglish: "about 150 MB"
-            case .smallEnglish: "about 500 MB"
+            case .baseEnglish, .base: "about 150 MB"
+            case .smallEnglish, .small: "about 500 MB"
             case .largeTurbo: "about 630 MB"
             }
         }
@@ -32,8 +74,8 @@ actor Transcriber {
         /// Free space needed to download and compile the model, with headroom.
         var bytesNeeded: Int64 {
             switch self {
-            case .baseEnglish: 400_000_000
-            case .smallEnglish: 1_000_000_000
+            case .baseEnglish, .base: 400_000_000
+            case .smallEnglish, .small: 1_000_000_000
             case .largeTurbo: 1_400_000_000
             }
         }
@@ -61,7 +103,7 @@ actor Transcriber {
         let repoFolder = downloadBase.appending(path: "models").appending(path: repo)
         let folders = (try? FileManager.default.contentsOfDirectory(at: repoFolder, includingPropertiesForKeys: nil)) ?? []
         return folders.first { folder in
-            folder.lastPathComponent.hasSuffix(model.rawValue) && modelFiles.allSatisfy {
+            folder.lastPathComponent.hasSuffix("-" + model.rawValue) && modelFiles.allSatisfy {
                 FileManager.default.fileExists(atPath: folder.appending(path: $0).path)
             }
         }
@@ -96,10 +138,7 @@ actor Transcriber {
             }
         }
 
-        try Self.checkFreeSpace(model.bytesNeeded, at: downloadBase)
-        let folder = try await WhisperKit.download(
-            variant: model.rawValue, downloadBase: downloadBase, from: Self.repo, endpoint: Self.endpoint
-        ) { fraction in progress?(fraction.fractionCompleted) }
+        let folder = try await Self.download(model, downloadBase: downloadBase, progress: progress)
         do {
             kit = try await WhisperKit(config(model, folder: folder, downloadBase: downloadBase))
             loadedModel = model
@@ -107,6 +146,19 @@ actor Transcriber {
             try? FileManager.default.removeItem(at: folder)   // so the next attempt starts clean
             throw error
         }
+    }
+
+    /// Downloads a model without loading it (e.g. a language's model while dictation keeps using another).
+    static func download(_ model: Model, downloadBase: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
+        if let folder = localFolder(for: model, downloadBase: downloadBase) { return folder }
+        try checkFreeSpace(model.bytesNeeded, at: downloadBase)
+        let folder = try await WhisperKit.download(
+            variant: model.rawValue, downloadBase: downloadBase, from: repo, endpoint: endpoint
+        ) { fraction in progress?(fraction.fractionCompleted) }
+        guard localFolder(for: model, downloadBase: downloadBase) != nil else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return folder
     }
 
     private func config(_ model: Model, folder: URL, downloadBase: URL) -> WhisperKitConfig {

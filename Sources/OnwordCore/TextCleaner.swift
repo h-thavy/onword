@@ -134,17 +134,36 @@ public struct TextCleaner {
             t = capitalizeFirst(t)
         }
 
-        // Leading space when gluing onto a word or punctuation.
-        if let prev, !prev.isWhitespace, !"([{\"'“‘/".contains(prev) {
+        // Leading space when gluing onto a word or punctuation — except in scripts written without spaces
+        // between words (Japanese, Chinese, Thai, Khmer…).
+        if let prev, !prev.isWhitespace, !"([{\"'“‘/".contains(prev),
+           !isSpaceless(prev), !(t.first.map(isSpaceless) ?? false) {
             t = " " + t
         }
 
         // Inserting before existing text: drop our final period and separate with a space.
         if let next = after.first, next.isLetter || next.isNumber {
-            if t.hasSuffix(".") { t.removeLast() }
-            t += " "
+            if t.hasSuffix(".") || t.hasSuffix("。") { t.removeLast() }
+            if !isSpaceless(next), !(t.last.map(isSpaceless) ?? false) { t += " " }
         }
         return t
+    }
+
+    /// Characters of scripts that don't put spaces between words: CJK, kana, Thai, Lao, Khmer, Myanmar,
+    /// and full-width punctuation.
+    static func isSpaceless(_ c: Character) -> Bool {
+        guard let v = c.unicodeScalars.first?.value else { return false }
+        switch v {
+        case 0x0E00...0x0EFF,   // Thai, Lao
+             0x1000...0x109F,   // Myanmar
+             0x1780...0x17FF,   // Khmer
+             0x3000...0x30FF,   // CJK punctuation, Hiragana, Katakana
+             0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,   // CJK ideographs
+             0xFF00...0xFFEF:   // full-width forms
+            return true
+        default:
+            return false
+        }
     }
 
     static func capitalizeFirst(_ s: String) -> String {

@@ -11,6 +11,8 @@ struct SettingsView: View {
     @ObservedObject private var google = GoogleCalendar.shared
     @Environment(\.dismiss) private var dismiss
     @State private var appearance = Appearance.current
+    /// Test hook: ONWORD_TEST_SETTINGS=languages opens the language picker with Settings.
+    @State private var showLanguages = ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] == "languages"
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,6 +62,7 @@ struct SettingsView: View {
         .frame(width: 780, height: 540)
         .font(Theme.sans(14))
         .foregroundStyle(Theme.ink)
+        .sheet(isPresented: $showLanguages) { LanguagePicker() }
     }
 
     // MARK: General
@@ -85,19 +88,14 @@ struct SettingsView: View {
                     ForEach(AudioDevices.inputs()) { device in Button(device.name) { dictation.microphoneUID = device.uid } }
                 }
             }
-            SettingsRow(title: "Speech model", detail: "Runs on this Mac. Bigger is more accurate but slower to load.") {
-                changeMenu(dictation.model.shortTitle) {
-                    ForEach(Transcriber.Model.allCases) { model in Button(model.title) { dictation.model = model } }
-                }
+            SettingsRow(title: "Language", detail: languageDetail) {
+                Button(Languages.name(dictation.pendingModel?.language ?? dictation.activeLanguage)) { showLanguages = true }
+                    .buttonStyle(.pillQuiet)
             }
-            SettingsRow(title: "Language", detail: dictation.model.isEnglishOnly ? "English-only model. Choose Large v3 Turbo for 99 languages." : nil, last: true) {
-                if dictation.model.isEnglishOnly {
-                    Text("English").foregroundStyle(Theme.inkTertiary)
-                } else {
-                    changeMenu(languageName(dictation.language)) {
-                        Button("Auto-detect") { dictation.language = "auto" }
-                        Divider()
-                        ForEach(Self.languages, id: \.self) { code in Button(languageName(code)) { dictation.language = code } }
+            SettingsRow(title: "Speed", detail: "Runs on this Mac. More accurate models are slower to load.", last: true) {
+                changeMenu((dictation.pendingModel?.model.tier ?? dictation.model.tier).title) {
+                    ForEach(Transcriber.Model.Tier.allCases) { tier in
+                        Button("\(tier.title) — \(tier.detail)") { dictation.chooseTier(tier) }
                     }
                 }
             }
@@ -316,10 +314,12 @@ struct SettingsView: View {
         return "Used for dictation and Notetaker."
     }
 
-    static let languages = ["en", "km", "th", "vi", "zh", "ja", "ko", "fr", "de", "es", "it", "pt"]
-
-    private func languageName(_ code: String) -> String {
-        code == "auto" ? "Auto-detect" : (Locale.current.localizedString(forLanguageCode: code) ?? code)
+    private var languageDetail: String {
+        if let pending = dictation.pendingModel {
+            return pending.failure.map { "Download failed: \($0)" }
+                ?? "Downloading the \(Languages.name(pending.language)) model… \(Int(pending.progress * 100))%. You can keep dictating in \(Languages.name(dictation.activeLanguage)) meanwhile."
+        }
+        return "The language you dictate in. Used for dictation and Notetaker."
     }
 }
 
@@ -329,6 +329,8 @@ extension Transcriber.Model {
         case .baseEnglish: "Base (English)"
         case .smallEnglish: "Small (English)"
         case .largeTurbo: "Large v3 Turbo"
+        case .base: "Base"
+        case .small: "Small"
         }
     }
 }

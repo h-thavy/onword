@@ -4,6 +4,18 @@ import XCTest
 final class TextCleanerTests: XCTestCase {
     let cleaner = TextCleaner()
 
+    func testNoSpacesAroundSpacelessScripts() {
+        // Japanese after Japanese: no space glued in front.
+        XCTAssertEqual(cleaner.clean("明日は大丈夫です。", before: "こんにちは。", after: ""), "明日は大丈夫です。")
+        // Japanese inserted before Japanese: no trailing space.
+        XCTAssertEqual(cleaner.clean("はい。", before: "", after: "ありがとう"), "はい")
+        // Thai and Khmer too.
+        XCTAssertEqual(cleaner.clean("สวัสดี", before: "ครับ", after: ""), "สวัสดี")
+        XCTAssertEqual(cleaner.clean("សួស្តី", before: "បាទ", after: ""), "សួស្តី")
+        // English is unchanged.
+        XCTAssertEqual(cleaner.clean("Hello there.", before: "Hi", after: ""), " hello there.")
+    }
+
     func testRemovesFillers() {
         XCTAssertEqual(cleaner.clean("Um, I think, uh, we should ship it."), "I think, we should ship it.")
         XCTAssertEqual(cleaner.clean("Hmm, okay."), "Okay.")

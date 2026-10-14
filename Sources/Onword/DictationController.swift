@@ -94,9 +94,82 @@ final class DictationController: ObservableObject {
             if model != oldValue { loadModel() }
         }
     }
-    /// ISO code, or "auto". Only used by multilingual models.
-    @Published var language: String {
+    /// ISO code, or "auto". Only used by multilingual models. Change it with `chooseLanguage(_:)`, which
+    /// downloads the language's model first if needed.
+    @Published private(set) var language: String {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
+    }
+
+    /// The language dictation uses now ("en" with an English-only model).
+    var activeLanguage: String { model.isEnglishOnly ? "en" : language }
+
+    /// A language or size change waiting for its model to download. Dictation keeps using the current model
+    /// meanwhile, and switches when the download finishes.
+    struct PendingModel: Equatable {
+        var model: Transcriber.Model
+        var language: String
+        var progress: Double = 0
+        var failure: String?
+    }
+    @Published private(set) var pendingModel: PendingModel?
+    private var pendingTask: Task<Void, Never>?
+
+    /// Dictate in another language ("auto" = detect). Non-English languages share a multilingual model,
+    /// downloaded the first time one is chosen.
+    func chooseLanguage(_ code: String) {
+        switchModel(to: .variant(pendingModel?.model.tier ?? model.tier, english: code == "en"), language: code)
+    }
+
+    /// Fast / Balanced / Most accurate, for the current language.
+    func chooseTier(_ tier: Transcriber.Model.Tier) {
+        let code = pendingModel?.language ?? activeLanguage
+        switchModel(to: .variant(tier, english: code == "en"), language: code)
+    }
+
+    /// Cancels a waiting language/size change, keeping the current model.
+    func cancelPendingModel() {
+        pendingTask?.cancel()
+        pendingTask = nil
+        pendingModel = nil
+    }
+
+    private func switchModel(to target: Transcriber.Model, language code: String) {
+        pendingTask?.cancel()
+        pendingTask = nil
+        pendingModel = nil
+        if target == model || Transcriber.localFolder(for: target, downloadBase: AppPaths.models) != nil {
+            language = code
+            model = target          // loads from disk (no-op if unchanged)
+            return
+        }
+        pendingModel = PendingModel(model: target, language: code)
+        log.notice("Downloading \(target.rawValue, privacy: .public) for language \(code, privacy: .public)")
+        pendingTask = Task {
+            do {
+                _ = try await Transcriber.download(target, downloadBase: AppPaths.models) { fraction in
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            let controller = DictationController.shared
+                            if controller.pendingModel?.model == target { controller.pendingModel?.progress = fraction }
+                        }
+                    }
+                }
+                guard !Task.isCancelled, pendingModel?.model == target else { return }
+                pendingModel = nil
+                language = code
+                model = target
+            } catch {
+                guard !Task.isCancelled, pendingModel?.model == target else { return }
+                log.error("Download of \(target.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                pendingModel?.failure = Self.describeModelError(error, online: wasOnline != false)
+            }
+        }
+    }
+
+    /// Retries a failed language/size download.
+    func retryPendingModel() {
+        guard let pending = pendingModel else { return }
+        switchModel(to: pending.model, language: pending.language)
     }
     /// Microphone for dictation and meetings (Core Audio UID); nil follows the system default.
     @Published var microphoneUID: String? {
@@ -128,8 +201,10 @@ final class DictationController: ObservableObject {
         AppPaths.migrateLegacySettings()
         let defaults = UserDefaults.standard
         hotkey = HotkeyMonitor.Key(rawValue: defaults.string(forKey: "hotkey") ?? "") ?? .recommendedDefault
-        model = Transcriber.Model(rawValue: defaults.string(forKey: "model") ?? "") ?? .smallEnglish
-        language = defaults.string(forKey: "language") ?? "auto"
+        let savedModel = Transcriber.Model(rawValue: defaults.string(forKey: "model") ?? "") ?? .smallEnglish
+        model = savedModel
+        // English-only models always dictate English; earlier versions stored "auto" for them.
+        language = savedModel.isEnglishOnly ? "en" : (defaults.string(forKey: "language") ?? "auto")
         removeFillers = defaults.object(forKey: "removeFillers") as? Bool ?? true
         microphoneUID = defaults.string(forKey: AudioRecorder.microphoneKey)
     }
@@ -176,6 +251,8 @@ final class DictationController: ObservableObject {
         refreshPermissions()
         loadModel()
         ensureSpeakerModels()
+        // Test hook: ONWORD_TEST_LANGUAGE=ja picks a language at launch, as the language picker would.
+        if let code = ProcessInfo.processInfo.environment["ONWORD_TEST_LANGUAGE"] { chooseLanguage(code) }
     }
 
     /// Re-checks permissions. While anything is missing this runs every 2 s on its own,
