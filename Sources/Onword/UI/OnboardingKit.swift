@@ -242,16 +242,13 @@ struct OBCard<Content: View>: View {
 /// The shortcut as a small key inside text ("Hold [⌥ Opt →] while you speak"), sized like the text around it.
 struct InlineKey: View {
     let key: HotkeyMonitor.Key
+    /// The size of the text around it; the keycap is drawn about twice as tall.
     var size: CGFloat = 18
+    @ObservedObject private var dictation = DictationController.shared
 
     var body: some View {
-        Text(key.onboardingLabel)
-            .font(Theme.sans(size, .medium))
-            .foregroundStyle(OB.hex(0x30302F))
-            .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: 4).fill(OB.background))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(OB.chipBorder))
-            .shadow(color: OB.ink.opacity(0.1), radius: 3, y: 2)
+        // The real key, drawn as a Mac keycap (not a text chip); it lights up while you hold it.
+        MiniKeycap(key: key, pressed: dictation.hotkeyIsDown, scale: size * 1.9 / 60)
     }
 }
 

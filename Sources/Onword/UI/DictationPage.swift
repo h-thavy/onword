@@ -17,7 +17,7 @@ struct DictationPage: View {
                 Text(userName.trimmingCharacters(in: .whitespaces).isEmpty ? greeting : "\(greeting), \(userName.trimmingCharacters(in: .whitespaces))").font(Theme.sans(24, .semibold))
                 HStack(spacing: 5) {
                     Text("Hold").foregroundStyle(Theme.inkTertiary)
-                    GlowChip(text: dictation.hotkey.chip)
+                    MiniKeycap(key: dictation.hotkey, pressed: dictation.hotkeyIsDown, scale: 0.5)
                     Text("in any app and speak. Onword types it for you, privately on this Mac.")
                         .foregroundStyle(Theme.inkTertiary)
                 }
