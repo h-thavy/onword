@@ -1,4 +1,5 @@
 import AppKit
+import Network
 import OnwordCore
 import os
 
@@ -51,6 +52,38 @@ final class DictationController: ObservableObject {
         practiceSink = nil
     }
     @Published private(set) var modelStatus = "Not loaded"
+    /// Download progress of the speech model (0…1) while it's downloading, otherwise nil.
+    @Published private(set) var modelProgress: Double?
+    /// The speech model is loaded and dictation can run (setup's download step waits for this).
+    @Published private(set) var modelReady = false
+    enum SpeakerModelState: Equatable { case downloading, ready, failed(String) }
+    /// The speaker-separation models for meeting notes.
+    @Published private(set) var speakerModels: SpeakerModelState = SpeakerModels.isDownloaded ? .ready : .downloading
+    private var speakerRetry: DispatchWorkItem?
+    /// Why the speech model couldn't be loaded, in plain words; nil when fine.
+    @Published private(set) var modelFailure: String?
+    private var modelRetry: DispatchWorkItem?
+    private var modelAttempts = 0
+    private var modelLoadID = UUID()
+    private var lastModelAttempt = Date.distantPast
+    private var networkStarted = false
+    private var wasOnline: Bool?
+    private lazy var network: NWPathMonitor = {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in   // runs on the main queue (see scheduleModelRetry)
+            let online = path.status == .satisfied
+            MainActor.assumeIsolated { DictationController.shared.networkChanged(online: online) }
+        }
+        return monitor
+    }()
+
+    /// Back online after a failed download (offline → online): try again straight away.
+    private func networkChanged(online: Bool) {
+        defer { wasOnline = online }
+        // Network paths can flap; don't retry more than every 10 s on their account.
+        if online, wasOnline == false, modelFailure != nil, Date().timeIntervalSince(lastModelAttempt) > 10 { retryModel() }
+        if online, wasOnline == false, case .failed = speakerModels { ensureSpeakerModels() }
+    }
 
     @Published var hotkey: HotkeyMonitor.Key {
         didSet { UserDefaults.standard.set(hotkey.rawValue, forKey: "hotkey"); hotkeyMonitor.key = hotkey }
@@ -142,6 +175,7 @@ final class DictationController: ObservableObject {
         }
         refreshPermissions()
         loadModel()
+        ensureSpeakerModels()
     }
 
     /// Re-checks permissions. While anything is missing this runs every 2 s on its own,
@@ -191,24 +225,117 @@ final class DictationController: ObservableObject {
         }
     }
 
+    /// Loads the speech model, downloading it the first time. A failed download is retried on its own
+    /// (after 5 s, 15 s, 30 s, then every minute) and as soon as the Mac is back online.
     func loadModel() {
+        if !networkStarted {   // knowing whether the Mac is online makes the error message accurate
+            networkStarted = true
+            network.start(queue: .main)
+        }
+        modelRetry?.cancel()
+        modelRetry = nil
+        modelReady = false
         state = .loadingModel
-        modelStatus = "Downloading / loading \(model.rawValue)… (first time can take a few minutes)"
+        modelFailure = nil
         let model = self.model
+        let downloaded = Transcriber.localFolder(for: model, downloadBase: AppPaths.models) != nil
+        modelStatus = downloaded ? "Loading the speech model…" : "Downloading the speech model…"
+        modelProgress = downloaded ? nil : 0
+        let loadID = UUID()
+        modelLoadID = loadID
+        lastModelAttempt = Date()
         Task {
             do {
-                try await transcriber.load(model, downloadBase: AppPaths.models)
-                guard model == self.model else { return }
+                try await transcriber.load(model, downloadBase: AppPaths.models) { fraction in
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            let controller = DictationController.shared
+                            guard controller.modelLoadID == loadID, controller.state == .loadingModel else { return }
+                            controller.modelProgress = fraction
+                            controller.modelStatus = fraction < 1
+                                ? "Downloading the speech model… \(Int(fraction * 100))%"
+                                : "Preparing the speech model… (about a minute, only the first time)"
+                        }
+                    }
+                }
+                guard model == self.model, modelLoadID == loadID else { return }
                 modelStatus = "\(model.rawValue) loaded"
+                modelProgress = nil
+                modelAttempts = 0
+                modelReady = true
                 log.notice("Model \(model.rawValue, privacy: .public) loaded")
                 state = .idle
                 refreshPermissions()
             } catch {
-                log.error("Model load failed: \(error.localizedDescription)")
-                modelStatus = "Model failed to load"
-                state = .error("Model failed: \(error.localizedDescription)")
+                guard model == self.model, modelLoadID == loadID else { return }
+                let message = Self.describeModelError(error, online: wasOnline != false)
+                log.error("Model load failed (attempt \(self.modelAttempts + 1)): \(error.localizedDescription, privacy: .public)")
+                modelStatus = message
+                modelProgress = nil
+                modelFailure = message
+                state = .error(message)
+                scheduleModelRetry()
             }
         }
+    }
+
+    /// Downloads the speaker-separation models if needed, retrying every 15 s (and when back online).
+    func ensureSpeakerModels() {
+        speakerRetry?.cancel()
+        speakerRetry = nil
+        guard !SpeakerModels.isDownloaded else { speakerModels = .ready; return }
+        speakerModels = .downloading
+        Task {
+            do {
+                try await SpeakerModels.download()
+                speakerModels = .ready
+                log.notice("Speaker models downloaded")
+            } catch {
+                log.error("Speaker models download failed: \(error.localizedDescription, privacy: .public)")
+                speakerModels = .failed(wasOnline == false
+                    ? "You’re offline — it’ll download when you’re back online."
+                    : "Couldn’t download — retrying.")
+                let work = DispatchWorkItem { MainActor.assumeIsolated { DictationController.shared.ensureSpeakerModels() } }
+                speakerRetry = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
+            }
+        }
+    }
+
+    /// Tries loading the model again now (the "Try again" buttons).
+    func retryModel() {
+        guard state != .loadingModel else { return }
+        loadModel()
+    }
+
+    private func scheduleModelRetry() {
+        let delays: [TimeInterval] = [5, 15, 30]
+        let delay = modelAttempts < delays.count ? delays[modelAttempts] : 60
+        modelAttempts += 1
+        let work = DispatchWorkItem { MainActor.assumeIsolated { DictationController.shared.retryModel() } }
+        modelRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// What went wrong, in plain words. The download library often hides the network error behind a generic
+    /// "Download failed", so being offline is judged from the error chain and from the Mac's network status.
+    static func describeModelError(_ error: Error, online: Bool) -> String {
+        if let error = error as? Transcriber.TranscriberError { return error.localizedDescription }
+        var errors: [NSError] = []
+        var next: NSError? = error as NSError
+        while let current = next, errors.count < 5 {
+            errors.append(current)
+            next = current.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        if errors.contains(where: { $0.domain == NSCocoaErrorDomain && $0.code == NSFileWriteOutOfSpaceError }) {
+            return "Not enough disk space for the speech model. Free up about 1 GB, then click Try again."
+        }
+        let offlineCodes: Set<Int> = [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost,
+                                      NSURLErrorDataNotAllowed, NSURLErrorInternationalRoamingOff]
+        if !online || errors.contains(where: { $0.domain == NSURLErrorDomain && offlineCodes.contains($0.code) }) {
+            return "You’re offline. Onword needs to download its speech model once (about 500 MB) — it’ll start as soon as you’re back online."
+        }
+        return "Couldn’t download the speech model. Check your internet connection — Onword keeps retrying on its own."
     }
 
     // MARK: - Hotkey actions

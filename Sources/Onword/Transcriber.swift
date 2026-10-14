@@ -1,4 +1,5 @@
 import Foundation
+import os
 import WhisperKit
 
 /// On-device speech-to-text with WhisperKit. Models download once from Hugging Face, then run offline.
@@ -19,13 +20,54 @@ actor Transcriber {
         }
 
         var isEnglishOnly: Bool { rawValue.hasSuffix(".en") }
+
+        var downloadSize: String {
+            switch self {
+            case .baseEnglish: "about 150 MB"
+            case .smallEnglish: "about 500 MB"
+            case .largeTurbo: "about 630 MB"
+            }
+        }
+
+        /// Free space needed to download and compile the model, with headroom.
+        var bytesNeeded: Int64 {
+            switch self {
+            case .baseEnglish: 400_000_000
+            case .smallEnglish: 1_000_000_000
+            case .largeTurbo: 1_400_000_000
+            }
+        }
     }
 
     enum TranscriberError: LocalizedError {
         case notLoaded
-        var errorDescription: String? { "The speech model isn't loaded yet." }
+        case notEnoughSpace(needed: Int64)
+        var errorDescription: String? {
+            switch self {
+            case .notLoaded: "The speech model isn't loaded yet."
+            case .notEnoughSpace(let needed):
+                "Not enough disk space. Free up about \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)) and try again."
+            }
+        }
     }
 
+    static let repo = "argmaxinc/whisperkit-coreml"
+    /// Test hook: ONWORD_TEST_HF_ENDPOINT points downloads at another server (e.g. an unreachable one).
+    private static let endpoint = ProcessInfo.processInfo.environment["ONWORD_TEST_HF_ENDPOINT"] ?? "https://huggingface.co"
+    private static let modelFiles = ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc"]
+
+    /// The model's folder if it's already fully downloaded.
+    static func localFolder(for model: Model, downloadBase: URL) -> URL? {
+        let repoFolder = downloadBase.appending(path: "models").appending(path: repo)
+        let folders = (try? FileManager.default.contentsOfDirectory(at: repoFolder, includingPropertiesForKeys: nil)) ?? []
+        return folders.first { folder in
+            folder.lastPathComponent.hasSuffix(model.rawValue) && modelFiles.allSatisfy {
+                FileManager.default.fileExists(atPath: folder.appending(path: $0).path)
+            }
+        }
+    }
+
+    private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "dictation")
     private var kit: WhisperKit?
     private(set) var loadedModel: Model?
 
@@ -35,20 +77,49 @@ actor Transcriber {
         loadedModel = nil
     }
 
-    func load(_ model: Model, downloadBase: URL) async throws {
+    /// Loads the model, downloading it first only if it isn't on disk yet, so an already-downloaded model
+    /// loads offline. A model that's on disk but won't load (a damaged download) is deleted and fetched again.
+    /// `progress` reports the download, 0…1.
+    func load(_ model: Model, downloadBase: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws {
         if loadedModel == model, kit != nil { return }
         kit = nil
         loadedModel = nil
-        let config = WhisperKitConfig(
-            model: model.rawValue,
-            downloadBase: downloadBase,
-            verbose: false,
-            prewarm: true,
-            load: true,
-            download: true
-        )
-        kit = try await WhisperKit(config)
-        loadedModel = model
+
+        if let folder = Self.localFolder(for: model, downloadBase: downloadBase) {
+            do {
+                kit = try await WhisperKit(config(model, folder: folder, downloadBase: downloadBase))
+                loadedModel = model
+                return
+            } catch {
+                log.error("Model on disk didn't load (\(error.localizedDescription, privacy: .public)); downloading it again")
+                try? FileManager.default.removeItem(at: folder)
+            }
+        }
+
+        try Self.checkFreeSpace(model.bytesNeeded, at: downloadBase)
+        let folder = try await WhisperKit.download(
+            variant: model.rawValue, downloadBase: downloadBase, from: Self.repo, endpoint: Self.endpoint
+        ) { fraction in progress?(fraction.fractionCompleted) }
+        do {
+            kit = try await WhisperKit(config(model, folder: folder, downloadBase: downloadBase))
+            loadedModel = model
+        } catch {
+            try? FileManager.default.removeItem(at: folder)   // so the next attempt starts clean
+            throw error
+        }
+    }
+
+    private func config(_ model: Model, folder: URL, downloadBase: URL) -> WhisperKitConfig {
+        WhisperKitConfig(model: model.rawValue, downloadBase: downloadBase, modelFolder: folder.path,
+                         verbose: false, prewarm: true, load: true, download: false)
+    }
+
+    private static func checkFreeSpace(_ needed: Int64, at url: URL) throws {
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        if let available = values?.volumeAvailableCapacityForImportantUsage, available < needed {
+            throw TranscriberError.notEnoughSpace(needed: needed)
+        }
     }
 
     /// - Parameters:

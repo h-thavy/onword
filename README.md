@@ -12,7 +12,7 @@ Everything runs **on your Mac**: no account, no API key, no subscription. Nothin
 curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash
 ```
 
-This downloads the latest release, checks its checksum, installs **Onword.app** in `/Applications` (or `~/Applications` if `/Applications` isn't writable), and opens it. A short setup then walks you through permissions, tests your shortcut on an on-screen keyboard, and lets you practice hold-to-talk and hands-free dictation.
+This downloads the latest release, checks its checksum, installs **Onword.app** in `/Applications` (or `~/Applications` if `/Applications` isn't writable), and opens it. A short setup then downloads the speech models, walks you through permissions, tests your shortcut on an on-screen keyboard, and lets you practice hold-to-talk and hands-free dictation.
 
 Run the same command again to **update**. To **uninstall**:
 ```bash
@@ -22,7 +22,7 @@ Add `--purge` to also delete your history, notes, meetings and downloaded models
 
 **Requirements:**
 - A Mac with **Apple Silicon** (M1 or later) running **macOS 14 Sonoma** or later.
-- About **1 GB** free for the speech model, downloaded once on first launch.
+- An internet connection the first time, and about **1 GB** free: setup downloads the speech model (about 500 MB) and the speaker model (11 MB) once, and won't continue until they're on your Mac. After that Onword works **fully offline**. If a download fails, it retries on its own (and as soon as you're back online), and a damaged download is fetched again automatically.
 - Meeting summaries also need **macOS 26 with Apple Intelligence** turned on.
 
 ## What it does

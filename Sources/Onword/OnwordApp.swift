@@ -84,6 +84,9 @@ private struct MenuContent: View {
         Button("Open Onword") { WindowManager.shared.show() }
             .keyboardShortcut("o")
         Text(controller.statusText)
+        if controller.modelFailure != nil {
+            Button("Retry speech model download") { controller.retryModel() }
+        }
         if let call = detector.current { Text("In a \(call.platform.title) call") }
 
         Divider()

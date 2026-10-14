@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-/// First-run setup: welcome → permissions → shortcut test → hold-to-talk → hands-free → done.
+/// First-run setup: welcome → download models → permissions → shortcut test → hold-to-talk → hands-free → done.
 /// Steps can't be skipped: each one unlocks only after Onword has seen it work.
 enum Onboarding {
     /// Developer option: `ONWORD_ONBOARDING_STEP=hotkey` (or `hotkey-pressed`, `holdToTalk`, …) opens setup
@@ -37,7 +37,7 @@ enum Onboarding {
 
 struct OnboardingView: View {
     enum Step: Int, CaseIterable {
-        case welcome, permissions, hotkey, holdToTalk, handsFree, done
+        case welcome, download, permissions, hotkey, holdToTalk, handsFree, done
     }
 
     @State private var step: Step = Self.initialStep
@@ -48,7 +48,10 @@ struct OnboardingView: View {
             return step
         }
         guard let saved = Onboarding.savedStep.flatMap(Step.init(rawValue:)) else { return .welcome }
-        // Practice needs the permissions; if one was turned off meanwhile, go back to that step.
+        // Later steps need the models and permissions; if one went missing meanwhile, go back to that step.
+        let modelsOnDisk = Transcriber.localFolder(for: DictationController.shared.model, downloadBase: AppPaths.models) != nil
+            && SpeakerModels.isDownloaded
+        if saved.rawValue > Step.download.rawValue, !modelsOnDisk { return .download }
         if saved.rawValue > Step.permissions.rawValue, !Permissions.allGranted { return .permissions }
         return saved
     }
@@ -60,6 +63,7 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
+                case .download: DownloadStep(next: next)
                 case .permissions: PermissionsStep(next: next)
                 case .hotkey: HotkeyStep(next: next)
                 case .holdToTalk: HoldToTalkStep(next: next)
@@ -153,6 +157,89 @@ private struct WelcomeStep: View {
                 .padding(.top, -20)
             Spacer()
             StepFooter(title: "Get started", action: next)
+        }
+    }
+}
+
+/// Downloads what Onword needs before it can be used. Starts on its own at launch; this step waits for it.
+private struct DownloadStep: View {
+    let next: () -> Void
+    @ObservedObject private var dictation = DictationController.shared
+
+    private var ready: Bool { dictation.modelReady && dictation.speakerModels == .ready }
+
+    var body: some View {
+        VStack(spacing: 22) {
+            StepHeader(title: "Getting Onword ", italic: "ready",
+                       message: "Onword understands you right here on your Mac, so it downloads its models once. After that it works offline.")
+            SettingsCard {
+                SettingsRow(title: "Speech model", detail: "Turns your voice into text · \(dictation.model.downloadSize)") { speech }
+                SettingsRow(title: "Speaker model", detail: "Tells voices apart in meeting notes · 11 MB") { speaker }
+                SettingsRow(title: "Meeting summaries", detail: summariesDetail, last: true) { summaries }
+            }
+            .frame(maxWidth: 600)
+            Text(ready ? "All downloaded." : "Keep Onword open and connected to the internet until this finishes.")
+                .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+            Spacer()
+            StepFooter(title: "Continue", enabled: ready, action: next)
+        }
+    }
+
+    @ViewBuilder private var speech: some View {
+        if dictation.modelReady {
+            done
+        } else if let failure = dictation.modelFailure {
+            failed(failure) { dictation.retryModel() }
+        } else if let progress = dictation.modelProgress, progress < 1 {
+            HStack(spacing: 8) {
+                ProgressView(value: progress).frame(width: 110).tint(Theme.ink)
+                Text("\(Int(progress * 100))%").monospacedDigit().frame(width: 38, alignment: .trailing)
+            }
+            .font(Theme.sans(13, .semibold))
+        } else {
+            working(dictation.modelProgress == nil ? "Loading…" : "Preparing…")
+        }
+    }
+
+    @ViewBuilder private var speaker: some View {
+        switch dictation.speakerModels {
+        case .ready: done
+        case .downloading: working("Downloading…")
+        case .failed(let message): failed(message) { dictation.ensureSpeakerModels() }
+        }
+    }
+
+    /// Apple Intelligence is part of macOS, not something Onword can download, so it's optional here.
+    private var summariesDetail: String {
+        MeetingSummarizer.shared.unavailableReason.map { "Optional. \($0)" } ?? "Apple Intelligence, built into macOS"
+    }
+
+    @ViewBuilder private var summaries: some View {
+        if MeetingSummarizer.shared.unavailableReason == nil {
+            done
+        } else {
+            Text("Optional").font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkTertiary)
+        }
+    }
+
+    private var done: some View {
+        Label("Ready", systemImage: "checkmark.circle.fill").font(Theme.sans(13, .semibold))
+            .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
+    }
+
+    private func working(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(text).font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkTertiary)
+        }
+    }
+
+    private func failed(_ message: String, retry: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(message).font(Theme.sans(12, .medium)).foregroundStyle(.orange)
+                .frame(maxWidth: 230, alignment: .trailing).multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again", action: retry).buttonStyle(.pillQuiet)
         }
     }
 }
@@ -283,8 +370,9 @@ private struct PracticeStatus: View {
             case .transcribing:
                 Label("Writing…", systemImage: "ellipsis")
             case .loadingModel:
-                ProgressView().controlSize(.small)
-                Text(dictation.modelStatus).foregroundStyle(Theme.inkTertiary)
+                ModelDownloadStatus(compact: false)
+            case .error where dictation.modelFailure != nil:
+                ModelDownloadStatus(compact: false)
             case .needsPermissions:
                 Label("Onword needs its permissions first — go back one step.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
@@ -297,7 +385,37 @@ private struct PracticeStatus: View {
             }
         }
         .font(Theme.sans(13.5, .semibold))
-        .frame(height: 22)
+        .frame(minHeight: 22)
+    }
+}
+
+/// The speech model's download: a progress bar with a percentage, or what went wrong and a Try again button.
+struct ModelDownloadStatus: View {
+    let compact: Bool
+    @ObservedObject private var dictation = DictationController.shared
+
+    var body: some View {
+        Group {
+            if let failure = dictation.modelFailure {
+                HStack(spacing: 10) {
+                    Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
+                    Text(failure).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { dictation.retryModel() }.buttonStyle(.pillQuiet)
+                }
+                .frame(maxWidth: 600)
+            } else if dictation.state == .loadingModel {
+                HStack(spacing: 10) {
+                    if let progress = dictation.modelProgress, progress < 1 {
+                        ProgressView(value: progress).frame(width: compact ? 120 : 160).tint(Theme.ink)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(dictation.modelStatus).foregroundStyle(Theme.inkTertiary)
+                }
+            }
+        }
+        .font(Theme.sans(compact ? 12 : 13.5, compact ? .medium : .semibold))
+        .multilineTextAlignment(.leading)
     }
 }
 

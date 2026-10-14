@@ -92,9 +92,7 @@ actor MeetingProcessor {
 
     private func diarize(_ samples: [Float], transcription: [TranscriptionResult]) async throws -> [TranscriptSegment] {
         if speakerKit == nil {
-            let config = PyannoteConfig(
-                downloadBase: AppPaths.models.path, download: true, load: true, verbose: false)
-            speakerKit = try await SpeakerKit(config)
+            speakerKit = try await SpeakerKit(SpeakerModels.config(load: true))
         }
         guard let speakerKit else { return [] }
         let diarization = try await speakerKit.diarize(audioArray: samples)
@@ -122,5 +120,34 @@ actor MeetingProcessor {
         TranscriptMerger.dropHallucinations(results.flatMap(\.segments).map {
             TranscriptSegment(start: Double($0.start), end: Double($0.end), speaker: speaker, text: $0.text)
         })
+    }
+}
+
+/// The speaker-separation models (about 11 MB), used to tell voices apart in meeting notes.
+/// Like the speech model, they're used straight from disk once downloaded, so meetings work offline.
+enum SpeakerModels {
+    static var folder: URL { AppPaths.models.appending(path: "models/argmaxinc/speakerkit-coreml") }
+    private static let parts = ["speaker_segmenter", "speaker_embedder", "speaker_clusterer"]
+
+    /// All three models are fully on disk.
+    static var isDownloaded: Bool {
+        parts.allSatisfy { part in
+            let enumerator = FileManager.default.enumerator(at: folder.appending(path: part), includingPropertiesForKeys: nil)
+            return (enumerator?.allObjects as? [URL] ?? []).contains { $0.lastPathComponent == "coremldata.bin" }
+        }
+    }
+
+    static func config(load: Bool) -> PyannoteConfig {
+        isDownloaded
+            ? PyannoteConfig(downloadBase: AppPaths.models.path, modelFolder: folder.path, download: false,
+                             load: load, verbose: false)
+            : PyannoteConfig(downloadBase: AppPaths.models.path, download: true, load: load, verbose: false)
+    }
+
+    /// Downloads the models if they aren't on disk yet.
+    static func download() async throws {
+        guard !isDownloaded else { return }
+        _ = try await SpeakerKit(config(load: false))
+        guard isDownloaded else { throw CocoaError(.fileReadCorruptFile) }
     }
 }
