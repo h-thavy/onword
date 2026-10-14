@@ -7,6 +7,12 @@ import OnwordCore
 /// be re-processed; delete a meeting to delete its audio.
 enum AppPaths {
     static let root: URL = {
+        // Test hook: ONWORD_TEST_DATA=/folder uses that folder instead (sample meetings for snapshots).
+        if let test = ProcessInfo.processInfo.environment["ONWORD_TEST_DATA"] {
+            let url = URL(fileURLWithPath: test, isDirectory: true)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let url = base.appendingPathComponent("Onword", isDirectory: true)
         // The app used to be called FlowLite: carry its history, notes, meetings and models over once.

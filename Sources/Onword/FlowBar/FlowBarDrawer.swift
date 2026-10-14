@@ -123,7 +123,7 @@ private struct MeetingsDrawerView: View {
             Rectangle().fill(Theme.border).frame(height: 1)
             Button {
                 FlowBarDrawer.shared.close()
-                if !recorder.isRecording { recorder.start() }
+                NotetakerFlow.shared.newNote(source: "flow_bar_drawer")
             } label: {
                 Label("Start new note", systemImage: "plus").frame(maxWidth: .infinity)
             }
@@ -160,7 +160,7 @@ private struct MeetingsDrawerView: View {
             Spacer(minLength: 8)
             Button(meeting.joinURL != nil ? "Join + Start" : "Start notes") {
                 FlowBarDrawer.shared.close()
-                CalendarService.shared.joinAndRecord(meeting)
+                NotetakerFlow.shared.joinAndStart(meeting)
             }
             .buttonStyle(meeting.isNow ? PillButtonStyle() : PillButtonStyle(prominent: false))
             .controlSize(.small)

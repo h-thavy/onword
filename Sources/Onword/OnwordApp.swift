@@ -93,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = DictionaryStore.shared   // loads (and migrates) the dictionary file
             MeetingDetector.shared.start()
             CalendarService.shared.start()
+            NotetakerFlow.shared.runTestHooks()
             if let folder = ProcessInfo.processInfo.environment["ONWORD_TEST_MEETING"] {
                 MeetingRecorder.shared.importForTesting(from: URL(fileURLWithPath: folder))
                 WindowManager.shared.show(.notetaker)
@@ -105,10 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { ScratchpadWindow.shared.toggle() }
             }
             GlobalShortcuts.shared.register(keyCode: kVK_ANSI_M, modifiers: optionKey) {
-                MainActor.assumeIsolated {
-                    MeetingRecorder.shared.toggle()
-                    WindowManager.shared.show(.notetaker)
-                }
+                MainActor.assumeIsolated { NotetakerFlow.shared.shortcut() }
             }
         }
     }

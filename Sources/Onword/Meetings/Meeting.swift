@@ -5,6 +5,8 @@ import OnwordCore
 /// mic.caf (you) and system.caf (everyone else, via the process tap).
 struct Meeting: Codable, Identifiable, Equatable {
     enum Status: String, Codable {
+        /// Opened from the calendar to take prep notes; nothing recorded yet.
+        case draft
         case recording, processing, ready, failed
     }
 
@@ -32,6 +34,14 @@ struct Meeting: Codable, Identifiable, Equatable {
     var decisions: [String]?
     var todos: [MeetingTodo]?
     var summaryError: String?
+    /// "Ask anything" conversation about this meeting (Apple Intelligence).
+    var chat: [ChatMessage]?
+    /// Drafts the chat wrote (follow-up emails…), shown on the Docs tab.
+    var docs: [MeetingDoc]?
+    /// Recorded in more than one go (Resume). Parts after the first are appended to the tracks on stop.
+    var resumedCount: Int?
+    /// Short meeting without notes: the summary waits for "Generate summary" (Wispr's deferred meetings).
+    var summaryDeferred: Bool?
 
     var folder: URL { AppPaths.meetings.appendingPathComponent(id.uuidString, isDirectory: true) }
     var micURL: URL { folder.appendingPathComponent("mic.caf") }
@@ -55,6 +65,12 @@ struct Meeting: Codable, Identifiable, Equatable {
         return segments.map(\.speaker).filter { seen.insert($0).inserted }
     }
 
+    /// Open, non-archived action items.
+    var activeTodos: [MeetingTodo] { (todos ?? []).filter { $0.archived != true } }
+
+    /// The live or final transcript has fewer than this many words: "Started by mistake?".
+    var wordCount: Int { segments.reduce(0) { $0 + $1.text.split(separator: " ").count } }
+
     var markdown: String {
         var md = TranscriptExporter.markdown(title: title, date: startedAt, segments: segments,
                                              speakerNames: Dictionary(uniqueKeysWithValues: speakers.map { ($0, name(for: $0)) }),
@@ -71,11 +87,30 @@ struct Meeting: Codable, Identifiable, Equatable {
         return md
     }
 
+    /// The title to show: "Untitled" until one is typed or comes from the calendar.
+    var displayTitle: String { title.trimmingCharacters(in: .whitespaces).isEmpty ? "Untitled" : title }
+
     static func defaultTitle(for date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "EEE d MMM, HH:mm"
         return "Meeting – \(f.string(from: date))"
     }
+}
+
+/// One turn of a meeting chat.
+struct ChatMessage: Codable, Identifiable, Equatable {
+    enum Role: String, Codable { case user, assistant }
+    var id = UUID()
+    var role: Role
+    var text: String
+}
+
+/// A document the chat wrote for a meeting (Wispr's "artifacts").
+struct MeetingDoc: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var title: String
+    var body: String
+    var createdAt = Date()
 }
 
 /// An action item from a meeting's notes.
@@ -85,6 +120,7 @@ struct MeetingTodo: Codable, Identifiable, Equatable {
     var owner: String?
     var due: String?
     var done = false
+    var archived: Bool?
 
     var markdown: String {
         var line = "- [\(done ? "x" : " ")] \(task)"
@@ -110,9 +146,14 @@ final class MeetingStore: ObservableObject {
             guard let data = try? Data(contentsOf: folder.appendingPathComponent("meeting.json")) else { return nil }
             return try? decoder.decode(Meeting.self, from: data)
         }
-        meetings = loaded.map { (meeting: Meeting) -> Meeting in
+        meetings = loaded.compactMap { (meeting: Meeting) -> Meeting? in
             // A meeting still marked "recording" after a relaunch was cut off by a quit or crash.
             var m = meeting
+            // An untouched draft (opened from the calendar, nothing written) isn't kept.
+            if m.status == .draft, m.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try? FileManager.default.removeItem(at: m.folder)
+                return nil
+            }
             if m.status == .recording && MeetingRecorder.shared.currentID != m.id {
                 m.status = .failed
                 m.statusDetail = "Recording was interrupted. Use Re-process to transcribe the audio that was saved."

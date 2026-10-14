@@ -32,6 +32,7 @@ final class CalendarService: ObservableObject {
 
     enum Source { case google, mac, none }
     var source: Source {
+        if Self.testUpcoming { return .mac }
         if GoogleCalendar.shared.isConnected { return .google }
         return access == .granted ? .mac : .none
     }
@@ -50,8 +51,8 @@ final class CalendarService: ObservableObject {
 
     private let store = EKEventStore()
     private var timer: Timer?
+    private var reminderTimer: Timer?
     private var reminded = Set<String>()
-    private lazy var prompt = MeetingPromptPanel()
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "calendar")
 
     private init() {
@@ -67,10 +68,11 @@ final class CalendarService: ObservableObject {
             MainActor.assumeIsolated { CalendarService.shared.refresh() }
         }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                CalendarService.shared.refresh()
-                CalendarService.shared.remindIfStarting()
-            }
+            MainActor.assumeIsolated { CalendarService.shared.refresh() }
+        }
+        // Reminders can be "right before" (15 s), so they're checked more often.
+        reminderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            MainActor.assumeIsolated { CalendarService.shared.remindIfStarting() }
         }
     }
 
@@ -106,7 +108,26 @@ final class CalendarService: ObservableObject {
     // MARK: - Events
 
     /// Reloads meetings. Google is polled at most every 5 minutes unless `force` is set.
+    /// Test hook: ONWORD_TEST_UPCOMING=1 shows sample meetings (for snapshots).
+    private static let testUpcoming = ProcessInfo.processInfo.environment["ONWORD_TEST_UPCOMING"] != nil
+
     func refresh(force: Bool = false) {
+        if Self.testUpcoming {
+            let now = Date(), cal = Calendar.current
+            func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
+            let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now))!.addingTimeInterval(10 * 3600)
+            upcoming = [
+                UpcomingMeeting(id: "t1", title: "Design review", start: at(-10), end: at(20), attendees: ["Dara Sok", "Mina Park", "Leo Chan"],
+                                joinURL: URL(string: "https://meet.google.com/abc-defg-hij"), platform: .googleMeet, calendarColor: NSColor(srgbRed: 0.47, green: 0.53, blue: 0.80, alpha: 1)),
+                UpcomingMeeting(id: "t2", title: "Weekly sync with Sam", start: at(35), end: at(65), attendees: ["Sam Lee"],
+                                joinURL: URL(string: "https://zoom.us/j/123"), platform: .zoom, calendarColor: NSColor(srgbRed: 0.01, green: 0.61, blue: 0.90, alpha: 1)),
+                UpcomingMeeting(id: "t3", title: "Hiring debrief", start: at(150), end: at(180), attendees: ["Ana Ruiz", "Tom Ng", "Kai Mori", "Eve Stone", "Bo Li"],
+                                joinURL: nil, platform: nil, calendarColor: NSColor(srgbRed: 0.20, green: 0.71, blue: 0.47, alpha: 1)),
+                UpcomingMeeting(id: "t4", title: "1:1 with Mina", start: tomorrow, end: tomorrow.addingTimeInterval(1800), attendees: ["Mina Park"],
+                                joinURL: URL(string: "https://meet.google.com/xyz-abcd-efg"), platform: .googleMeet, calendarColor: NSColor(srgbRed: 0.89, green: 0.49, blue: 0.45, alpha: 1)),
+            ]
+            return
+        }
         if GoogleCalendar.shared.isConnected {
             guard force || Date().timeIntervalSince(lastGoogleFetch) > 300 else { return }
             lastGoogleFetch = Date()
@@ -166,30 +187,28 @@ final class CalendarService: ObservableObject {
             .min { abs($0.start.timeIntervalSince(date)) < abs($1.start.timeIntervalSince(date)) }
     }
 
-    // MARK: - Join & record
+    // MARK: - Join
 
-    /// Opens the call link (if any) and starts recording, titled after the event.
-    func joinAndRecord(_ meeting: UpcomingMeeting) {
-        if let url = meeting.joinURL { NSWorkspace.shared.open(url) }
-        if !MeetingRecorder.shared.isRecording {
-            MeetingRecorder.shared.start(title: meeting.title, calendarMeeting: meeting)
-        }
-        WindowManager.shared.show(.notetaker)
+    /// Opens the meeting's call link (known meeting hosts only).
+    func join(_ meeting: UpcomingMeeting) {
+        if let url = meeting.joinURL { NotetakerFlow.openJoinURL(url) }
     }
 
-    /// At a meeting's start time, offer to join and record it.
+    /// "Notify before scheduled meetings start": the reminder pill above the Flow Bar, from the chosen lead
+    /// time until 5 minutes after the start (or the end, if sooner).
     private func remindIfStarting() {
-        guard remindersEnabled, !MeetingRecorder.shared.isRecording else { return }
+        let lead = NotetakerSettings.reminderLeadSeconds
+        guard remindersEnabled, lead >= 0 else { return }
         let now = Date()
-        guard let meeting = upcoming.first(where: { abs($0.start.timeIntervalSince(now)) <= 60 && !reminded.contains($0.id) })
-        else { return }
-        reminded.insert(meeting.id)
-        let message = meeting.joinURL != nil
-            ? "Join\(meeting.platform.map { " on \($0.title)" } ?? "") and take notes on this Mac?"
-            : "Take notes on this Mac?"
-        prompt.show(title: "\(meeting.title) is starting", message: message,
-                    acceptTitle: meeting.joinURL != nil ? "Join & Record" : "Record") { accepted in
-            if accepted { CalendarService.shared.joinAndRecord(meeting) }
+        for meeting in upcoming where !reminded.contains(meeting.id) {
+            let untilStart = meeting.start.timeIntervalSince(now)
+            guard untilStart <= TimeInterval(lead), untilStart > -60 else { continue }
+            reminded.insert(meeting.id)
+            if MeetingRecorder.shared.isRecording, let current = MeetingRecorder.shared.currentID,
+               MeetingStore.shared.meeting(current)?.calendarEventID == meeting.id { continue }
+            FlowBarIsland.shared.showReminder(.init(
+                id: meeting.id, title: meeting.title, start: meeting.start, surface: .scheduled, platform: meeting.platform,
+                meeting: meeting, dismissAt: min(meeting.start.addingTimeInterval(300), meeting.end)))
         }
     }
 }

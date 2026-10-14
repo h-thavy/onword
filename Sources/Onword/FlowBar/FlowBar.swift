@@ -140,6 +140,9 @@ final class FlowBar {
         }
     }
 
+    /// The bar's transparent canvas on screen (its bottom is the Dock top), for the island above it.
+    var canvasFrame: NSRect? { panel?.isVisible == true || panel != nil ? panel?.frame : nil }
+
     private var forcedMode: FlowBarModel.Mode?
     private var forcedTip: FlowBarModel.Target?
 
@@ -345,7 +348,13 @@ final class FlowBar {
             DictationController.shared.toggleHandsFree()
         case .record:
             closeDrawer()
-            MeetingRecorder.shared.start()
+            // With a meeting on the calendar now, the record button offers it; otherwise it starts a note.
+            let now = Date()
+            if CalendarService.shared.upcoming.contains(where: { $0.start <= now.addingTimeInterval(60) && $0.end > now }) {
+                toggleDrawer()
+            } else {
+                NotetakerFlow.shared.newNote(source: "flow_bar")
+            }
         case .meetings:
             toggleDrawer()
         case .cancel:
@@ -353,7 +362,7 @@ final class FlowBar {
         case .finish:
             DictationController.shared.finishDictation()
         case .meetingNote:
-            WindowManager.shared.show(.notetaker)
+            if let id = MeetingRecorder.shared.currentID { NotetakerFlow.shared.openNote(id) }
         case .meetingStop:
             MeetingRecorder.shared.stop()
         }

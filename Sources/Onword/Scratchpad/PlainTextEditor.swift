@@ -17,6 +17,8 @@ struct PlainTextEditor: NSViewRepresentable {
     var inset = NSSize(width: 18, height: 16)
     /// Extra scrollable space below the text, so it can clear floating buttons.
     var bottomOverscroll: CGFloat = 0
+    /// Put the cursor in the editor when it appears (the Scratchpad); notes leave focus alone.
+    var autoFocus = true
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -42,6 +44,7 @@ struct PlainTextEditor: NSViewRepresentable {
 
     /// Puts the cursor in the editor so you can type or dictate straight away.
     private func focus(_ textView: NSTextView) {
+        guard autoFocus else { return }
         DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
     }
 
@@ -121,8 +124,8 @@ struct PlainTextEditor: NSViewRepresentable {
                 field.translatesAutoresizingMaskIntoConstraints = false
                 textView.addSubview(field)
                 NSLayoutConstraint.activate([
-                    field.leadingAnchor.constraint(equalTo: textView.leadingAnchor, constant: 23),
-                    field.topAnchor.constraint(equalTo: textView.topAnchor, constant: 16),
+                    field.leadingAnchor.constraint(equalTo: textView.leadingAnchor, constant: parent.inset.width + 5),
+                    field.topAnchor.constraint(equalTo: textView.topAnchor, constant: parent.inset.height),
                 ])
                 placeholderField = field
             }

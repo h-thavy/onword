@@ -19,8 +19,8 @@ final class MeetingDetector: ObservableObject {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .ask: "Ask me"
-            case .auto: "Record automatically"
+            case .ask: "Notify me"
+            case .auto: "Start automatically"
             case .off: "Do nothing"
             }
         }
@@ -38,7 +38,6 @@ final class MeetingDetector: ObservableObject {
     private var dismissedPID: pid_t?
     private var lastSeen = Date.distantPast
     private var timer: Timer?
-    private lazy var prompt = MeetingPromptPanel()
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "detection")
 
     /// How long the call app must be off the mic before the call counts as over.
@@ -76,11 +75,12 @@ final class MeetingDetector: ObservableObject {
         } else if let ended = current, Date().timeIntervalSince(lastSeen) > endGrace {
             current = nil
             dismissedPID = nil
-            prompt.hide()
+            FlowBarIsland.shared.dismissReminder("detected")
             log.notice("Call ended: \(ended.platform.title, privacy: .public)")
+            // "Notetaker stopping" counts down, then stops (Keep going cancels it).
             if recorder.isRecording && recordingFollowsCall {
                 recordingFollowsCall = false
-                recorder.stop()
+                NotetakerFlow.shared.callEnded()
             }
         }
     }
@@ -88,24 +88,33 @@ final class MeetingDetector: ObservableObject {
     private func callStarted(_ meeting: DetectedMeeting) {
         let recorder = MeetingRecorder.shared
         guard !recorder.isRecording, dismissedPID != meeting.pid else { return }
-        switch mode {
-        case .off:
-            break
-        case .auto:
-            record(meeting)
-        case .ask:
-            prompt.show(title: "\(meeting.platform.title) call detected", message: "Record and transcribe it on this Mac?") { [weak self] accepted in
-                guard let self else { return }
-                if accepted { self.record(meeting) } else { self.dismissedPID = meeting.pid }
-            }
-        }
+        guard mode != .off else { return }
+        // "Meeting detected" pill for 20 s; with "Start Notetaker automatically" it counts down 10 s and starts.
+        let event = CalendarService.shared.currentMeeting()
+        FlowBarIsland.shared.showReminder(.init(
+            id: "detected", title: event?.title ?? "\(meeting.platform.title) call", start: Date(), surface: .detected,
+            platform: meeting.platform, meeting: event,
+            autoStartSeconds: mode == .auto ? 10 : nil, dismissAt: Date().addingTimeInterval(mode == .auto ? 30 : 20)))
     }
 
-    private func record(_ meeting: DetectedMeeting) {
+    /// Records the detected call (from the pill); it also stops when the call ends.
+    func recordDetected() {
+        guard let meeting = current ?? scan() else {
+            NotetakerFlow.shared.newNote(source: "auto_detect_prompt")
+            return
+        }
         recordingFollowsCall = true
-        // Prefer the calendar event's title; fall back to "Zoom – Tue 13 Oct, 15:49".
-        let fallback = "\(meeting.platform.title) – \(Meeting.defaultTitle(for: Date()).replacingOccurrences(of: "Meeting – ", with: ""))"
-        MeetingRecorder.shared.start(title: CalendarService.shared.currentMeeting()?.title ?? fallback)
+        if let event = CalendarService.shared.currentMeeting() {
+            NotetakerFlow.shared.beginRecording(event: event)
+        } else {
+            NotetakerFlow.shared.beginRecording(event: nil)
+        }
+        if let id = MeetingRecorder.shared.currentID {
+            MeetingStore.shared.update(id) {
+                if $0.title.isEmpty { $0.title = "\(meeting.platform.title) call" }
+                $0.platform = meeting.platform.rawValue
+            }
+        }
     }
 
     /// Call apps currently on the microphone.

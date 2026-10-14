@@ -43,6 +43,9 @@ final class GoogleCalendar: ObservableObject {
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "google")
 
     private init() {
+        // Test builds with sample data stay away from the real Keychain (a differently signed build would
+        // make macOS ask for the password).
+        guard ProcessInfo.processInfo.environment["ONWORD_TEST_DATA"] == nil else { return }
         connectedEmail = Keychain.read(account: "google-email")
     }
 

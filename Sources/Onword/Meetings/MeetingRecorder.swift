@@ -15,6 +15,10 @@ final class MeetingRecorder: ObservableObject {
     @Published private(set) var systemAudioWarning: String?
     /// Rough transcript while recording; replaced by the diarized one afterwards.
     @Published private(set) var liveSegments: [TranscriptSegment] = []
+    /// When your microphone last picked up sound (for "Notetaker isn't hearing audio from your mic").
+    private(set) var lastMicSound = Date()
+    /// Called after a recording stops, before processing (the lifecycle banners hook in here).
+    var onStopped: ((UUID) -> Void)?
 
     var isRecording: Bool { currentID != nil }
 
@@ -27,6 +31,8 @@ final class MeetingRecorder: ObservableObject {
     private var timer: Timer?
     private var speakerPoller: ActiveSpeakerPoller?
     private var live: LiveTranscriber?
+    /// Recording into an existing note (Resume): the new audio goes to part files appended on stop.
+    private var resumingDuration: TimeInterval?
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
 
     private init() {
@@ -34,27 +40,48 @@ final class MeetingRecorder: ObservableObject {
     }
 
     func toggle() {
-        isRecording ? stop() : start()
+        if isRecording { stop() } else { start() }
     }
 
     /// - Parameters:
     ///   - title: explicit title; otherwise the calendar event happening now, otherwise the date.
     ///   - calendarMeeting: the event being recorded (defaults to whatever is on the calendar now).
-    func start(title: String? = nil, calendarMeeting: UpcomingMeeting? = nil) {
-        guard !isRecording else { return }
+    ///   - existing: record into this note: a draft opened from the calendar, or a stopped note (Resume).
+    @discardableResult
+    func start(title: String? = nil, calendarMeeting: UpcomingMeeting? = nil, into existing: UUID? = nil) -> UUID? {
+        guard !isRecording else { return nil }
         startedAt = Date()
-        let event = calendarMeeting ?? CalendarService.shared.currentMeeting()
-        var meeting = Meeting(title: title ?? event?.title ?? Meeting.defaultTitle(for: startedAt), startedAt: startedAt)
-        meeting.calendarEventID = event?.id
-        meeting.attendees = event?.attendees
+        resumingDuration = nil
+        var meeting: Meeting
+        if let existing, let found = MeetingStore.shared.meeting(existing) {
+            meeting = found
+            if found.status != .draft {
+                // Resume: the clock and the speaker timeline continue where the last part ended.
+                resumingDuration = found.duration
+                startedAt = Date().addingTimeInterval(-found.duration)
+                meeting.resumedCount = (found.resumedCount ?? 0) + 1
+            } else {
+                meeting.startedAt = startedAt
+            }
+            meeting.status = .recording
+            meeting.summaryDeferred = nil
+        } else {
+            let event = calendarMeeting ?? CalendarService.shared.currentMeeting()
+            meeting = Meeting(title: title ?? event?.title ?? "", startedAt: startedAt)
+            meeting.calendarEventID = event?.id
+            meeting.attendees = event?.attendees
+        }
         try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
+        let micURL = resumingDuration == nil ? meeting.micURL : meeting.partURL(meeting.micURL)
+        let systemURL = resumingDuration == nil ? meeting.systemURL : meeting.partURL(meeting.systemURL)
+        lastMicSound = Date()
         let live = LiveTranscriber()
         self.live = live
         liveSegments = []
         let micBuffer = live.mic, systemBuffer = live.system
 
         do {
-            let writer = try AudioFileWriter(url: meeting.micURL)
+            let writer = try AudioFileWriter(url: micURL)
             micWriter = writer
             let levels = levels
             mic.onSamples = { samples in
@@ -66,14 +93,14 @@ final class MeetingRecorder: ObservableObject {
         } catch {
             log.error("Meeting mic failed: \(error.localizedDescription)")
             NSSound.beep()
-            try? FileManager.default.removeItem(at: meeting.folder)
-            return
+            if existing == nil { try? FileManager.default.removeItem(at: meeting.folder) }
+            return nil
         }
 
         systemAudioWarning = nil
         if #available(macOS 14.2, *) {
             do {
-                let writer = try AudioFileWriter(url: meeting.systemURL)
+                let writer = try AudioFileWriter(url: systemURL)
                 let capture = SystemAudioCapture()
                 let levels = levels
                 capture.onSamples = { samples in
@@ -114,9 +141,16 @@ final class MeetingRecorder: ObservableObject {
                 self.elapsed = Date().timeIntervalSince(self.startedAt)
                 self.micLevel = self.levels.mic
                 self.systemLevel = self.levels.system
+                if self.micLevel > 0.02 { self.lastMicSound = Date() }
             }
         }
-        log.notice("Meeting recording started (system audio: \(meeting.hasSystemAudio))")
+        log.notice("Meeting recording started (system audio: \(meeting.hasSystemAudio), resumed: \(self.resumingDuration != nil))")
+        return meeting.id
+    }
+
+    /// Records more into a stopped note.
+    func resume(_ id: UUID) {
+        start(into: id)
     }
 
     func stop() {
@@ -138,13 +172,34 @@ final class MeetingRecorder: ObservableObject {
         systemLevel = 0
 
         let duration = Date().timeIntervalSince(startedAt)
+        if resumingDuration != nil, let meeting = MeetingStore.shared.meeting(id) {
+            Self.appendPart(meeting.partURL(meeting.micURL), to: meeting.micURL)
+            Self.appendPart(meeting.partURL(meeting.systemURL), to: meeting.systemURL)
+        }
+        resumingDuration = nil
+        let liveWords = liveSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
         MeetingStore.shared.update(id) {
             $0.duration = duration
             $0.status = .processing
-            if !participants.isEmpty { $0.participants = participants }
+            if !participants.isEmpty { $0.participants = (($0.participants ?? []) + participants).uniqued() }
         }
-        log.notice("Meeting recording stopped after \(Int(duration)) s")
+        log.notice("Meeting recording stopped after \(Int(duration)) s (\(liveWords) live words)")
+        onStopped?(id)
         process(id)
+    }
+
+    /// Words heard live in the recording that's running (or just stopped).
+    var liveWordCount: Int { liveSegments.reduce(0) { $0 + $1.text.split(separator: " ").count } }
+
+    /// Appends a resumed part's audio to the main track, then removes the part.
+    private static func appendPart(_ part: URL, to track: URL) {
+        guard let added = try? AudioFileWriter.read(part) else { return }
+        let existing = (try? AudioFileWriter.read(track)) ?? []
+        if let writer = try? AudioFileWriter(url: track) {
+            writer.append(existing)
+            writer.append(added)
+        }
+        try? FileManager.default.removeItem(at: part)
     }
 
     /// Test hook: `ONWORD_TEST_MEETING=/folder` (containing mic.wav and/or system.wav) imports those
@@ -212,7 +267,13 @@ final class MeetingRecorder: ObservableObject {
                     m.status = .ready
                     m.statusDetail = segments.isEmpty ? "No speech was detected." : nil
                 }
-                MeetingSummarizer.shared.summarize(id)
+                // Short meetings without your own notes wait for "Generate summary" (as in Wispr Flow).
+                if let m = MeetingStore.shared.meeting(id), m.duration <= 300,
+                   m.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, m.summary == nil {
+                    MeetingStore.shared.update(id) { $0.summaryDeferred = true }
+                } else {
+                    MeetingSummarizer.shared.summarize(id)
+                }
                 // Free the meeting model's memory until the next meeting (dictation keeps its own).
                 if !isRecording { await MeetingProcessor.transcriber.unload() }
             } catch {
@@ -238,5 +299,19 @@ private final class LevelBox: @unchecked Sendable {
     var system: Float {
         get { lock.withLock { _system } }
         set { lock.withLock { _system = newValue } }
+    }
+}
+
+extension Meeting {
+    /// Where a resumed part of a track is recorded before it's appended (mic.caf → mic-part.caf).
+    func partURL(_ track: URL) -> URL {
+        track.deletingPathExtension().appendingPathExtension("part").appendingPathExtension("caf")
+    }
+}
+
+private extension Array where Element == String {
+    func uniqued() -> [String] {
+        var seen = Set<String>()
+        return filter { seen.insert($0.lowercased()).inserted }
     }
 }

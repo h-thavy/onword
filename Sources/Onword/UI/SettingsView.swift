@@ -13,6 +13,10 @@ struct SettingsView: View {
     @ObservedObject private var updates = UpdateChecker.shared
     @State private var appearance = Appearance.current
     @State private var dialog: Dialog?
+    @AppStorage("notetakerOpenNotepad") private var openNotepad = true
+    @AppStorage("notetakerStopWhenCallEnds") private var stopWhenCallEnds = true
+    @AppStorage("notetakerMaxLength") private var maxLength = 120
+    @AppStorage("notetakerReminderLead") private var reminderLead = 15
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var showInDock = DockIcon.isShown
     @State private var userName = UserProfile.name ?? ""
@@ -300,15 +304,38 @@ struct SettingsView: View {
         SettingsPage(title: "Notetaker") {
             SettingsSection(title: "Meeting detection") {
                 SettingsLine("Notify before scheduled meetings start", "Offers to join the call and take notes.") {
-                    SettingsSwitch(isOn: $calendar.remindersEnabled)
+                    SettingsSelect(value: calendar.remindersEnabled
+                                   ? (NotetakerSettings.reminderLeadOptions.first { $0.seconds == reminderLead }?.title ?? "Right before") : "Never") {
+                        ForEach(NotetakerSettings.reminderLeadOptions, id: \.seconds) { option in
+                            Button(option.title) {
+                                reminderLead = option.seconds
+                                calendar.remindersEnabled = option.seconds >= 0
+                            }
+                        }
+                    }
                 }
-                SettingsLine("When a call starts", "Zoom, Teams, FaceTime, Webex, Discord, or Meet / Teams / Slack huddles in a browser.") {
+                SettingsLine("Automatically detect any call", "Zoom, Teams, FaceTime, Webex, Discord, or Meet / Teams / Slack huddles in a browser.") {
                     SettingsSelect(value: detector.mode.title) {
                         ForEach(MeetingDetector.Mode.allCases) { mode in Button(mode.title) { detector.mode = mode } }
                     }
                 }
                 SettingsLine("Start or stop Notetaker", "From any app.", last: true) {
                     KeyChip(text: "⌥M")
+                }
+            }
+            SettingsSection(title: "Recording") {
+                SettingsLine("Open Notepad when starting Notetaker", "Shows your notes, the live transcript and Ask anything.") {
+                    SettingsSwitch(isOn: $openNotepad)
+                }
+                SettingsLine("Stop Notetaker when a call ends", "Counts down first, so you can keep going.") {
+                    SettingsSwitch(isOn: $stopWhenCallEnds)
+                }
+                SettingsLine("Maximum meeting length", "Notetaker checks in 5 minutes before it stops.", last: true) {
+                    SettingsSelect(value: NotetakerSettings.title(forMinutes: maxLength)) {
+                        ForEach(NotetakerSettings.maxLengthOptions, id: \.self) { minutes in
+                            Button(NotetakerSettings.title(forMinutes: minutes)) { maxLength = minutes }
+                        }
+                    }
                 }
             }
             SettingsSection(title: "Notes") {
