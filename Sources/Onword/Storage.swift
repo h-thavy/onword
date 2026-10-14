@@ -130,12 +130,8 @@ enum UserProfile {
         set { UserDefaults.standard.set(newValue?.trimmingCharacters(in: .whitespacesAndNewlines), forKey: key) }
     }
 
-    /// The first name of the Mac's account, as a suggestion in setup — skipping titles like "Sir" or "Dr",
-    /// so the suggestion never assumes anything about the person.
+    /// The first name of the Mac's account, as a suggestion in setup.
     static var suggestedName: String {
-        let titles: Set<String> = ["sir", "mr", "mrs", "ms", "miss", "mx", "dr", "madam", "madame", "lady", "lord",
-                                   "prof", "professor", "dame", "mister", "missus"]
-        return NSFullUserName().split(separator: " ").map(String.init)
-            .first { !titles.contains($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))) } ?? ""
+        NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
     }
 }
