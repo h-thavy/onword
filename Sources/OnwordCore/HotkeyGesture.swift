@@ -56,6 +56,17 @@ public struct HotkeyGesture {
         return .discardRecording
     }
 
+    /// Starts hands-free recording without a key press (the Flow Bar's mic button), so the next press finishes it.
+    /// Returns false when a recording is already running.
+    @discardableResult
+    public mutating func startHandsFree() -> Bool {
+        guard !isRecording else { return false }
+        reset()
+        isRecording = true
+        isHandsFree = true
+        return true
+    }
+
     /// Escape, errors, or anything else that aborts the current recording.
     public mutating func cancel() {
         reset()

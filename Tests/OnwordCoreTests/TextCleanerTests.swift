@@ -110,6 +110,17 @@ final class HotkeyGestureTests: XCTestCase {
         XCTAssertFalse(g.isRecording)
     }
 
+    func testHandsFreeStartedWithoutKeyFinishesOnNextPress() {
+        var g = HotkeyGesture()
+        XCTAssertTrue(g.startHandsFree())
+        XCTAssertTrue(g.isRecording)
+        XCTAssertTrue(g.isHandsFree)
+        XCTAssertFalse(g.startHandsFree())
+        XCTAssertEqual(g.press(at: t0), .finishRecording)
+        XCTAssertEqual(g.release(at: t0.addingTimeInterval(0.1)), .ignore)
+        XCTAssertFalse(g.isRecording)
+    }
+
     func testSlowSecondTapIsNotHandsFree() {
         var g = HotkeyGesture()
         _ = g.press(at: t0)
