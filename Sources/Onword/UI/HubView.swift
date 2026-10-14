@@ -55,7 +55,7 @@ struct HubView: View {
     var body: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                TitleStrip(collapsed: $collapsed, canCollapse: geo.size.width >= 1000)
+                TitleStrip()
                 HStack(spacing: 0) {
                     Sidebar(router: router, collapsed: collapsed)
                         .frame(width: collapsed ? 60 : 216)
@@ -90,34 +90,11 @@ struct HubView: View {
     }
 }
 
-/// The full-width draggable strip across the top. The traffic lights sit in the first
-/// 76 pt; the sidebar-collapse button is a 32×32 tile at x 92.
+/// The full-width strip across the top (52 pt), shared with the traffic lights and the sidebar toggle,
+/// which is a toolbar item (see `WindowManager`) so the title bar never swallows its clicks.
 private struct TitleStrip: View {
-    @Binding var collapsed: Bool
-    let canCollapse: Bool
-    @State private var hovering = false
-
     var body: some View {
-        HStack(spacing: 0) {
-            Button { collapsed.toggle() } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 17))
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 32, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.buttonFill : .clear))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plainPointer)
-            .help(collapsed ? "Show sidebar" : "Hide sidebar")
-            .disabled(!canCollapse && !collapsed)
-            .opacity(canCollapse || collapsed ? 1 : 0.4)
-            .onHover { hovering = $0 }
-            .padding(.leading, 92)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 52)
+        Color.clear.frame(maxWidth: .infinity).frame(height: 52)
     }
 }
 

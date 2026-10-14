@@ -91,6 +91,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
         // it, like Wispr Flow; the Hub's own strip (with the sidebar toggle) is drawn underneath.
         let toolbar = NSToolbar(identifier: "OnwordHub")
         toolbar.showsBaselineSeparator = false
+        toolbar.delegate = self   // the sidebar toggle, right after the traffic lights
+        toolbar.allowsUserCustomization = false
+        toolbar.displayMode = .iconOnly
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
@@ -173,5 +176,41 @@ final class GlobalShortcuts {
             DispatchQueue.main.async { action?() }
             return noErr
         }, 1, &spec, nil, nil)
+    }
+}
+
+// MARK: - Sidebar toggle (toolbar)
+
+extension NSToolbarItem.Identifier {
+    static let hubSidebar = NSToolbarItem.Identifier("OnwordHubSidebar")
+}
+
+/// The sidebar toggle is a real toolbar item, so the title bar (which handles window dragging) never
+/// swallows its clicks. It flips the same `hubSidebarCollapsed` setting the Hub reads.
+extension WindowManager: NSToolbarDelegate {
+    static let sidebarCollapsedKey = "hubSidebarCollapsed"
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.hubSidebar] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.hubSidebar] }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard itemIdentifier == .hubSidebar else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle sidebar")
+        item.label = "Sidebar"
+        item.toolTip = "Show or hide the sidebar"
+        item.isBordered = false   // a plain icon beside the traffic lights, like Wispr Flow
+        item.target = self
+        item.action = #selector(toggleSidebar(_:))
+        return item
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        let defaults = UserDefaults.standard
+        let collapsed = defaults.bool(forKey: Self.sidebarCollapsedKey)
+        // Collapsing needs room (as in Wispr Flow); opening it again always works.
+        if !collapsed, (hub?.frame.width ?? 0) < 1000 { NSSound.beep(); return }
+        defaults.set(!collapsed, forKey: Self.sidebarCollapsedKey)
     }
 }

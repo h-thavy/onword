@@ -71,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             WindowManager.shared.installSnapshotSignal()
             if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_PAGE"].flatMap(HubRouter.Page.init) {   // test hook
                 WindowManager.shared.show(page)
+                // ONWORD_TEST_TOGGLE_SIDEBAR=1 presses the sidebar toggle 3 s after launch.
+                if ProcessInfo.processInfo.environment["ONWORD_TEST_TOGGLE_SIDEBAR"] != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { WindowManager.shared.toggleSidebar(nil) }
+                }
             }
             if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] {   // test hook
                 WindowManager.shared.show()
