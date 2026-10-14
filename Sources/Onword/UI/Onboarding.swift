@@ -58,28 +58,50 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ProgressDots(current: step.rawValue, total: Step.allCases.count)
-                .padding(.top, 34)
+            OnboardingProgressHeader(fraction: progress, section: section)
             Group {
                 switch step {
                 case .welcome: WelcomeStep(next: next)
-                case .download: DownloadStep(next: next)
-                case .permissions: PermissionsStep(next: next)
-                case .hotkey: HotkeyStep(next: next)
-                case .holdToTalk: HoldToTalkStep(next: next)
-                case .handsFree: HandsFreeStep(next: next)
-                case .done: DoneStep()
+                case .download: DownloadStep(back: back, next: next)
+                case .permissions: PermissionsStep(back: back, next: next)
+                case .hotkey: HotkeyStep(back: back, next: next)
+                case .holdToTalk: HoldToTalkStep(back: back, next: next)
+                case .handsFree: HandsFreeStep(back: back, next: next)
+                case .done: DoneStep(back: back)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 56)
-            .padding(.bottom, 34)
+            .transition(.opacity)
+            .id(step)
         }
-        .frame(width: 780, height: 580)
-        .background(Theme.panel)
-        .font(Theme.sans(14))
-        .foregroundStyle(Theme.ink)
+        .frame(minWidth: 1140, minHeight: 750)
+        .background(OB.background)
+        .font(Theme.sans(15))
+        .foregroundStyle(OB.ink)
+        .environment(\.colorScheme, .light)   // Wispr's onboarding is always light
         .animation(.easeOut(duration: 0.2), value: step)
+    }
+
+    /// Progress sections: Get started · Download · Permissions · Set up · Learn.
+    private var section: Int {
+        switch step {
+        case .welcome: 0
+        case .download: 1
+        case .permissions: 2
+        case .hotkey: 3
+        case .holdToTalk, .handsFree, .done: 4
+        }
+    }
+
+    /// Completed sections count fully; the current one by how far into it you are.
+    private var progress: Double {
+        let within: Double = switch step {
+        case .holdToTalk: 1.0 / 3
+        case .handsFree: 2.0 / 3
+        case .done: 1
+        default: 1
+        }
+        return (Double(section) + (step == .done ? 1 : step.rawValue <= Step.hotkey.rawValue ? 1 : within)) / 5
     }
 
     private func next() {
@@ -88,58 +110,10 @@ struct OnboardingView: View {
             Onboarding.savedStep = following.rawValue
         }
     }
-}
 
-// MARK: - Shared pieces
-
-private struct ProgressDots: View {
-    let current: Int
-    let total: Int
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<total, id: \.self) { i in
-                Capsule().fill(i <= current ? Theme.ink : Theme.selected)
-                    .frame(width: i == current ? 22 : 7, height: 7)
-            }
-        }
-    }
-}
-
-private struct StepHeader: View {
-    let title: String
-    let italic: String
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Text("\(title)\(Text(italic).font(Theme.serif(38, italic: true)))")
-                .font(Theme.serif(38))
-                .multilineTextAlignment(.center)
-            Text(message).font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary)
-                .multilineTextAlignment(.center).frame(maxWidth: 540)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, 22)
-    }
-}
-
-private struct StepFooter: View {
-    var back: String?
-    var backAction: (() -> Void)?
-    let title: String
-    var enabled = true
-    let action: () -> Void
-
-    var body: some View {
-        HStack {
-            if let back, let backAction {
-                Button(back, action: backAction).buttonStyle(.plain).foregroundStyle(Theme.inkTertiary)
-            }
-            Spacer()
-            Button(title, action: action).buttonStyle(.pill).disabled(!enabled).opacity(enabled ? 1 : 0.4)
-                .keyboardShortcut(.defaultAction)
-        }
+    /// Back is always allowed; only moving forward needs each step to work.
+    private func back() {
+        if let previous = Step(rawValue: step.rawValue - 1) { step = previous }
     }
 }
 
@@ -149,39 +123,54 @@ private struct WelcomeStep: View {
     let next: () -> Void
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer()
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 120, height: 120)
-            StepHeader(title: "Speak, and it’s ", italic: "written",
-                       message: "Onword turns your voice into text in any app, and takes notes in your meetings. Everything runs on this Mac — nothing you say leaves it.")
-                .padding(.top, -20)
-            Spacer()
-            StepFooter(title: "Get started", action: next)
+        SplitStep(splash: true,
+                  title: Text("Speak, and it’s \(Text("written").font(Theme.serif(72, italic: true))).")
+                      .foregroundColor(OB.ink),
+                  description: "Onword turns your voice into text in any app, and takes notes in your meetings. Everything runs on this Mac — nothing you say leaves it.",
+                  content: { EmptyView() },
+                  cta: ("Get started", true, next)) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 220, height: 220)
+                .shadow(color: OB.ink.opacity(0.15), radius: 30, y: 20)
         }
     }
 }
 
 /// Downloads what Onword needs before it can be used. Starts on its own at launch; this step waits for it.
 private struct DownloadStep: View {
+    let back: () -> Void
     let next: () -> Void
     @ObservedObject private var dictation = DictationController.shared
 
     private var ready: Bool { dictation.modelReady && dictation.speakerModels == .ready }
 
     var body: some View {
-        VStack(spacing: 22) {
-            StepHeader(title: "Getting Onword ", italic: "ready",
-                       message: "Onword understands you right here on your Mac, so it downloads its models once. After that it works offline.")
-            SettingsCard {
-                SettingsRow(title: "Speech model", detail: "Turns your voice into text · \(dictation.model.downloadSize)") { speech }
-                SettingsRow(title: "Speaker model", detail: "Tells voices apart in meeting notes · 11 MB") { speaker }
-                SettingsRow(title: "Meeting summaries", detail: summariesDetail, last: true) { summaries }
+        CenteredStep(back: back) {
+            Text("Getting Onword ready").font(OB.title)
+            Text("Onword understands you right here on your Mac, so it downloads its models once. After that it works offline.")
+                .font(OB.subtitle).lineSpacing(10).frame(maxWidth: 520)
+        } content: {
+            OBCard(widget: true) {
+                row("Speech model", "Turns your voice into text · \(dictation.model.downloadSize)") { speech }
+                Divider().overlay(OB.sand)
+                row("Speaker model", "Tells voices apart in meeting notes · 11 MB") { speaker }
+                Divider().overlay(OB.sand)
+                row("Meeting summaries", summariesDetail) { summaries }
             }
-            .frame(maxWidth: 600)
             Text(ready ? "All downloaded." : "Keep Onword open and connected to the internet until this finishes.")
-                .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
+                .font(Theme.sans(15)).foregroundStyle(OB.tertiary).padding(.top, 16)
+        } footer: {
+            FooterButton(title: "Continue", enabled: ready, action: next)
+        }
+    }
+
+    private func row(_ title: String, _ detail: String, @ViewBuilder control: () -> some View) -> some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(Theme.sans(15, .medium))
+                Text(detail).font(Theme.sans(15)).foregroundStyle(OB.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
             Spacer()
-            StepFooter(title: "Continue", enabled: ready, action: next)
+            control()
         }
     }
 
@@ -192,10 +181,10 @@ private struct DownloadStep: View {
             failed(failure) { dictation.retryModel() }
         } else if let progress = dictation.modelProgress, progress < 1 {
             HStack(spacing: 8) {
-                ProgressView(value: progress).frame(width: 110).tint(Theme.ink)
-                Text("\(Int(progress * 100))%").monospacedDigit().frame(width: 38, alignment: .trailing)
+                ProgressView(value: progress).frame(width: 110).tint(OB.progress)
+                Text("\(Int(progress * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
             }
-            .font(Theme.sans(13, .semibold))
+            .font(Theme.sans(15, .semibold))
         } else {
             working(dictation.modelProgress == nil ? "Loading…" : "Preparing…")
         }
@@ -218,33 +207,35 @@ private struct DownloadStep: View {
         if MeetingSummarizer.shared.unavailableReason == nil {
             done
         } else {
-            Text("Optional").font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkTertiary)
+            Text("Optional").font(Theme.sans(15, .medium)).foregroundStyle(OB.tertiary)
         }
     }
 
     private var done: some View {
-        Label("Ready", systemImage: "checkmark.circle.fill").font(Theme.sans(13, .semibold))
-            .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
+        Label("Ready", systemImage: "checkmark.circle.fill").font(Theme.sans(15, .semibold)).foregroundStyle(OB.success)
     }
 
     private func working(_ text: String) -> some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(text).font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkTertiary)
+            Text(text).font(Theme.sans(15, .medium)).foregroundStyle(OB.tertiary)
         }
     }
 
     private func failed(_ message: String, retry: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Text(message).font(Theme.sans(12, .medium)).foregroundStyle(.orange)
-                .frame(maxWidth: 230, alignment: .trailing).multilineTextAlignment(.trailing)
+            Text(message).font(Theme.sans(13, .medium)).foregroundStyle(.orange)
+                .frame(maxWidth: 220, alignment: .trailing).multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Try again", action: retry).buttonStyle(.pillQuiet)
+            Button("Try again", action: retry).buttonStyle(OBButtonStyle(kind: .secondary, size: .small))
         }
     }
 }
 
+/// Wispr's permissions step: one card per permission (the first not yet allowed is open, with Allow), and a
+/// System Settings preview on the right showing where to switch Onword on.
 private struct PermissionsStep: View {
+    let back: () -> Void
     let next: () -> Void
     @State private var mic = Permissions.microphone
     @State private var accessibility = Permissions.accessibility
@@ -254,30 +245,38 @@ private struct PermissionsStep: View {
     @State private var now = Date()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private enum Kind: CaseIterable { case accessibility, microphone, inputMonitoring }
+
+    private func granted(_ kind: Kind) -> Bool {
+        switch kind {
+        case .accessibility: accessibility
+        case .microphone: mic
+        case .inputMonitoring: input
+        }
+    }
+
+    private var current: Kind? { Kind.allCases.first { !granted($0) } }
+
     var body: some View {
-        VStack(spacing: 22) {
-            StepHeader(title: "Three quick ", italic: "permissions",
-                       message: "macOS asks you to allow these once. Onword only listens while you hold your shortcut or record a meeting.")
-            SettingsCard {
-                row("Microphone", "To hear you.", mic) { Task { _ = await Permissions.requestMicrophone() } }
-                row("Accessibility", "To put text where your cursor is.", accessibility) { Permissions.requestAccessibility() }
-                row("Input Monitoring", "To notice your shortcut in other apps. macOS may ask to reopen Onword.", input, last: true) {
-                    Permissions.requestInputMonitoring()
-                }
-            }
-            .frame(maxWidth: 560)
-            if needsRelaunch {
-                HStack(spacing: 10) {
-                    Text("macOS needs Onword reopened to finish turning on Input Monitoring.")
-                        .font(Theme.sans(12.5)).foregroundStyle(.orange)
-                    Button("Reopen Onword") { Onboarding.relaunch() }.buttonStyle(.pill)
-                }
-            } else {
-                Text(allGranted ? "All set." : "In System Settings, switch Onword on, then come back here.")
-                    .font(Theme.sans(12.5)).foregroundStyle(Theme.inkTertiary)
-            }
-            Spacer()
-            StepFooter(title: "Continue", enabled: ready, action: next)
+        SplitStep(back: back,
+                  title: Text(allGranted ? "Thanks for trusting us, we value your privacy" : "Give Onword permissions on your computer"),
+                  content: {
+                      VStack(alignment: .leading, spacing: 24) {
+                          ForEach(Kind.allCases, id: \.self) { card($0) }
+                          if needsRelaunch {
+                              VStack(alignment: .leading, spacing: 8) {
+                                  Text("macOS needs Onword reopened to finish turning on Input Monitoring.")
+                                      .font(Theme.sans(15)).foregroundStyle(.orange)
+                                  Button("Reopen Onword") { Onboarding.relaunch() }
+                                      .buttonStyle(OBButtonStyle(kind: .primary, size: .small))
+                              }
+                          }
+                      }
+                      .animation(.timingCurve(0.05, 0.6, 0.4, 0.95, duration: 0.2), value: current)
+                  },
+                  cta: ready ? ("Continue", true, next) : nil) {
+            SettingsPreview(kind: current ?? .microphone, allowed: current == nil)
+                .padding(80)
         }
         .onReceive(timer) { date in
             now = date
@@ -296,96 +295,186 @@ private struct PermissionsStep: View {
         allGranted && !dictation.shortcutReady && now.timeIntervalSince(inputGrantedAt ?? now) > 4
     }
 
-    private func row(_ title: String, _ detail: String, _ granted: Bool, last: Bool = false,
-                     request: @escaping () -> Void) -> some View {
-        SettingsRow(title: title, detail: detail, last: last) {
-            if granted {
-                Label("Allowed", systemImage: "checkmark.circle.fill").font(Theme.sans(13, .semibold))
-                    .foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
-            } else {
-                Button("Allow", action: request).buttonStyle(.pill)
+    private func card(_ kind: Kind) -> some View {
+        let done = granted(kind)
+        let active = kind == current
+        let (title, doneTitle, detail, info): (String, String, String, String) = switch kind {
+        case .accessibility:
+            ("Allow Onword to insert spoken words", "Onword can now paste text anywhere",
+             "This lets Onword put your spoken words in the right text box",
+             "Onword reads the text around your cursor to match spacing and capitals, and uses the clipboard briefly to paste. It all stays on this Mac.")
+        case .microphone:
+            ("Allow Onword to use your microphone", "Onword can now use your microphone",
+             "Onword only listens while you hold your shortcut or record a meeting",
+             "The Flow Bar shows when the microphone is on.")
+        case .inputMonitoring:
+            ("Allow Onword to notice your shortcut", "Onword can now hear your shortcut",
+             "So holding your shortcut works in every app",
+             "Onword only watches for its own shortcut key. macOS may ask you to reopen Onword.")
+        }
+        return OBCard {
+            HStack {
+                Text(done ? doneTitle : title).font(Theme.sans(15, .medium))
+                Spacer()
+                if done { Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(OB.success) }
             }
+            if active {
+                Text(detail).font(Theme.sans(15)).foregroundStyle(OB.tertiary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button("Allow") { request(kind) }.buttonStyle(OBButtonStyle(kind: .primary, size: .extraSmall))
+                    Image(systemName: "info.circle").font(.system(size: 16)).foregroundStyle(OB.tertiary).help(info)
+                }
+                .padding(.top, 16)
+            }
+        }
+        .frame(minHeight: active ? 172 : 68)
+    }
+
+    private func request(_ kind: Kind) {
+        switch kind {
+        case .accessibility: Permissions.requestAccessibility()
+        case .microphone: Task { _ = await Permissions.requestMicrophone() }
+        case .inputMonitoring: Permissions.requestInputMonitoring()
+        }
+    }
+
+    /// A small System Settings window showing the pane to open and Onword's switch.
+    private struct SettingsPreview: View {
+        let kind: Kind
+        let allowed: Bool
+
+        private var pane: (String, String) {
+            switch kind {
+            case .accessibility: ("Accessibility", "Allow the applications below to control your computer.")
+            case .microphone: ("Microphone", "Allow the applications below to access your microphone.")
+            case .inputMonitoring: ("Input Monitoring", "Allow the applications below to monitor input from your keyboard.")
+            }
+        }
+
+        var body: some View {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        ForEach([0xFF5F57, 0xFEBC2E, 0x28C840], id: \.self) { Circle().fill(OB.hex(UInt32($0))).frame(width: 11, height: 11) }
+                    }
+                    .padding(.bottom, 14)
+                    ForEach(["General", "Appearance", "Privacy & Security", "Keyboard"], id: \.self) { item in
+                        Text(item).font(.system(size: 12, weight: item == "Privacy & Security" ? .medium : .regular))
+                            .foregroundStyle(item == "Privacy & Security" ? .white : OB.hex(0x1D1D1F))
+                            .padding(.horizontal, 8).padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(item == "Privacy & Security" ? OB.hex(0xA550A7) : .clear))
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .frame(width: 170)
+                .background(Color.white.opacity(0.6))
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(pane.0).font(.system(size: 15, weight: .semibold)).foregroundStyle(OB.hex(0x1D1D1F))
+                    Text(pane.1).font(.system(size: 12)).foregroundStyle(OB.hex(0x3C3C43))
+                    VStack(spacing: 0) {
+                        appRow("Onword", on: allowed, highlight: true)
+                    }
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                    Spacer()
+                }
+                .padding(20)
+            }
+            .frame(maxWidth: 560, maxHeight: 345)
+            .background(OB.hex(0xF4F3F1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .shadow(color: .black.opacity(0.24), radius: 35, y: 26)
+        }
+
+        private func appRow(_ name: String, on: Bool, highlight: Bool) -> some View {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 25, height: 25)
+                Text(name).font(.system(size: 13)).foregroundStyle(OB.hex(0x1D1D1F))
+                Spacer()
+                Capsule().fill(on ? OB.hex(0xA550A7) : OB.hex(0xE3E3E3)).frame(width: 38, height: 22)
+                    .overlay(alignment: on ? .trailing : .leading) { Circle().fill(.white).frame(width: 18).padding(2) }
+            }
+            .padding(.horizontal, 14).frame(height: 52)
         }
     }
 }
 
 // MARK: - Practice
 
-/// Shows the dictation shortcut, with a small menu to switch keys.
+/// "Your shortcut [key] · Change" under a practice window.
 private struct ShortcutLine: View {
     @ObservedObject private var dictation = DictationController.shared
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text("Your shortcut").foregroundStyle(Theme.inkTertiary)
-            KeyChip(text: dictation.hotkey.chip)
+        HStack(spacing: 8) {
+            Text("Your shortcut").foregroundStyle(OB.tertiary)
+            InlineKey(key: dictation.hotkey, size: 15)
             Menu {
                 ForEach(HotkeyMonitor.Key.allCases) { key in
                     Button(key.title + (key == .fn && GlobeKey.conflict != nil ? " (conflicts with 🌐 key)" : "")) {
                         dictation.hotkey = key
                     }
                 }
-            } label: { Text("Change").font(Theme.sans(12.5, .semibold)) }
+            } label: { Text("Change").font(Theme.sans(15, .semibold)) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         }
-        .font(Theme.sans(12.5))
+        .font(Theme.sans(15))
     }
 }
 
-/// A mock app window (email, AI chat) with a text box you dictate into.
-private struct MockApp<Header: View>: View {
+/// The editor inside a practice window, with Wispr's instruction placeholder while it's empty.
+private struct PracticeEditor<Placeholder: View>: View {
     @Binding var text: String
-    let placeholder: String
-    let listening: Bool
-    @ViewBuilder var header: () -> Header
+    @ViewBuilder var placeholder: () -> Placeholder
 
     var body: some View {
-        VStack(spacing: 0) {
-            header()
-            Divider().overlay(Theme.border)
-            PlainTextEditor(text: $text, font: NSFont(name: "Figtree", size: 16) ?? .systemFont(ofSize: 16),
-                            placeholder: placeholder, documentID: placeholder)
-                .frame(height: 96)
+        ZStack(alignment: .topLeading) {
+            PlainTextEditor(text: $text, font: NSFont(name: "Figtree", size: 15) ?? .systemFont(ofSize: 15),
+                            placeholder: "", documentID: "practice")
+            if text.isEmpty {
+                VStack(alignment: .leading, spacing: 6) { placeholder() }
+                    .font(Theme.sans(15, .medium)).foregroundStyle(OB.muted)
+                    .padding(.horizontal, 23).padding(.top, 16)
+                    .allowsHitTesting(false)
+            }
         }
-        .background(RoundedRectangle(cornerRadius: Theme.radiusMedium).fill(Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radiusMedium)
-            .strokeBorder(listening ? Theme.ink : Theme.border, lineWidth: listening ? 2 : 1))
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
-        .frame(maxWidth: 600)
+        .frame(height: 150)
     }
 }
 
-/// Live status under a practice box: listening, writing, a hint, or success.
+/// What's happening under a practice window: listening, writing, a coaching pill, or the download.
 private struct PracticeStatus: View {
-    let success: String?
+    let coaching: AnyView?
     let hint: String?
     @ObservedObject private var dictation = DictationController.shared
 
     var body: some View {
-        HStack(spacing: 8) {
+        Group {
             switch dictation.state {
             case .recording:
-                Label(dictation.isHandsFree ? "Listening hands-free — press the key again to finish" : "Listening… let go when you're done",
-                      systemImage: "waveform")
+                Label(dictation.isHandsFree ? "Listening hands-free — press your shortcut once to finish" : "Listening… let go when you’re done",
+                      systemImage: "waveform").foregroundStyle(OB.muted)
             case .transcribing:
-                Label("Writing…", systemImage: "ellipsis")
+                Label("Writing…", systemImage: "ellipsis").foregroundStyle(OB.muted)
             case .loadingModel:
                 ModelDownloadStatus(compact: false)
             case .error where dictation.modelFailure != nil:
                 ModelDownloadStatus(compact: false)
             case .needsPermissions:
-                Label("Onword needs its permissions first — go back one step.", systemImage: "exclamationmark.triangle")
+                Label("Onword needs its permissions first — go back to Permissions.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             default:
-                if let success {
-                    Label(success, systemImage: "checkmark.circle.fill").foregroundStyle(Color(red: 0.25, green: 0.55, blue: 0.35))
+                if let coaching {
+                    coaching
                 } else if let hint {
-                    Label(hint, systemImage: "hand.raised").foregroundStyle(.orange)
+                    Text(hint).foregroundStyle(OB.muted)
                 }
             }
         }
-        .font(Theme.sans(13.5, .semibold))
-        .frame(minHeight: 22)
+        .font(Theme.sans(15, .medium))
+        .frame(minHeight: 44)
+        .animation(.easeOut(duration: 0.15), value: dictation.state)
     }
 }
 
@@ -400,27 +489,36 @@ struct ModelDownloadStatus: View {
                 HStack(spacing: 10) {
                     Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
                     Text(failure).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    Button("Try again") { dictation.retryModel() }.buttonStyle(.pillQuiet)
+                    Button("Try again") { dictation.retryModel() }.buttonStyle(OBButtonStyle(kind: .secondary, size: .small))
                 }
                 .frame(maxWidth: 600)
             } else if dictation.state == .loadingModel {
                 HStack(spacing: 10) {
                     if let progress = dictation.modelProgress, progress < 1 {
-                        ProgressView(value: progress).frame(width: compact ? 120 : 160).tint(Theme.ink)
+                        ProgressView(value: progress).frame(width: compact ? 120 : 160).tint(OB.progress)
                     } else {
                         ProgressView().controlSize(.small)
                     }
-                    Text(dictation.modelStatus).foregroundStyle(Theme.inkTertiary)
+                    Text(dictation.modelStatus).foregroundStyle(OB.tertiary)
                 }
             }
         }
-        .font(Theme.sans(compact ? 12 : 13.5, compact ? .medium : .semibold))
+        .font(Theme.sans(compact ? 12 : 15, .medium))
         .multilineTextAlignment(.leading)
     }
 }
 
-/// Practice 1: hold the key, speak, let go — in a mock email.
+/// "Don't tap. Press and hold [key]" — shown when a quick tap was ignored.
+private func holdCoaching(_ key: HotkeyMonitor.Key) -> AnyView {
+    AnyView(OBPill {
+        Text("Don’t tap. Press and hold")
+        InlineKey(key: key, size: 18)
+    })
+}
+
+/// Practice 1 (Wispr's "Dictate a message"): hold the key, speak, let go — in a mock email.
 private struct HoldToTalkStep: View {
+    let back: () -> Void
     let next: () -> Void
     @ObservedObject private var dictation = DictationController.shared
     @State private var text = ""
@@ -430,37 +528,58 @@ private struct HoldToTalkStep: View {
     @State private var done = false
     @State private var usedHandsFree = false
 
+    private var tapped: Bool { !done && (dictation.lastQuickTap ?? .distantPast) > shownAt }
+
     private var hint: String? {
         if done { return nil }
-        if usedHandsFree { return "That was hands-free (double-tap). Here, hold \(dictation.hotkey.title) down while you talk." }
+        if usedHandsFree { return "That was hands-free. Here, hold your shortcut down while you talk." }
         if (dictation.lastHeardNothing ?? .distantPast) > shownAt {
             return "Didn’t catch that. Speak a little louder, close to your microphone."
-        }
-        if (dictation.lastQuickTap ?? .distantPast) > shownAt {
-            return "Don’t just tap — hold \(dictation.hotkey.title) down while you talk, then let go."
         }
         return nil
     }
 
     var body: some View {
-        VStack(spacing: 18) {
-            StepHeader(title: "Hold to ", italic: "talk",
-                       message: "Hold \(dictation.hotkey.title) down, read this out loud, then let go:")
-            Text("“Um, hi Dara, are you free on Friday at three? Scratch that. Are you free on Saturday morning?”")
-                .font(Theme.serif(19, italic: true)).multilineTextAlignment(.center).frame(maxWidth: 580)
-                .fixedSize(horizontal: false, vertical: true)
-            MockApp(text: $text, placeholder: "Hold \(dictation.hotkey.title), speak, and let go…",
-                    listening: dictation.state == .recording) {
-                VStack(spacing: 0) {
-                    mailField("To", "Dara")
-                    Divider().overlay(Theme.border)
-                    mailField("Subject", "Quick question")
-                }
+        CenteredStep(back: back) {
+            (Text("Dictate").italic() + Text(" a message with Onword")).font(OB.title)
+            HStack(spacing: 6) {
+                Text("Hold")
+                InlineKey(key: dictation.hotkey)
+                Text("while you speak. Onword turns your voice into text.")
             }
-            PracticeStatus(success: done ? "Hold-to-talk works — it’s the same in any app." : nil, hint: hint)
-            ShortcutLine()
-            Spacer(minLength: 0)
-            StepFooter(title: "Next: hands-free", enabled: done, action: next)
+            .font(OB.subtitle)
+        } content: {
+            VStack(spacing: 20) {
+                AppShell(name: "Mail", symbol: "envelope.fill", tint: OB.hex(0x2F7CF6), active: dictation.state == .recording) {
+                    VStack(spacing: 0) {
+                        mailField("To:", "Dara")
+                        Divider().overlay(OB.sand)
+                        mailField("Subject:", "Quick question")
+                        Divider().overlay(OB.sand)
+                        PracticeEditor(text: $text) {
+                            HStack(spacing: 6) {
+                                Text("Hold down")
+                                InlineKey(key: dictation.hotkey, size: 15)
+                                Text("and say this, then release:")
+                            }
+                            Text("“Um, hi Dara, are you free on Friday at three? Scratch that. Are you free on Saturday morning?”")
+                                .font(Theme.sans(15)).italic().fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if done {
+                        OBPill(sticker: true, rotation: 8) { Text("Well done!") }
+                            .offset(x: 60, y: -24)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                PracticeStatus(coaching: tapped ? holdCoaching(dictation.hotkey) : nil, hint: hint)
+                ShortcutLine()
+            }
+            .animation(.easeOut(duration: 0.15), value: done)
+        } footer: {
+            FooterButton(title: "Continue", enabled: done, action: next)
         }
         .onAppear {
             shownAt = Date()
@@ -474,17 +593,18 @@ private struct HoldToTalkStep: View {
 
     private func mailField(_ label: String, _ value: String) -> some View {
         HStack(spacing: 8) {
-            Text(label).foregroundStyle(Theme.inkTertiary).frame(width: 56, alignment: .leading)
+            Text(label).opacity(0.5)
             Text(value)
             Spacer()
         }
-        .font(Theme.sans(13.5))
-        .padding(.horizontal, 16).padding(.vertical, 9)
+        .font(Theme.sans(15))
+        .padding(.horizontal, 16).padding(.vertical, 10)
     }
 }
 
-/// Practice 2: double-tap to start hands-free, press again to finish — in a mock AI chat box.
+/// Practice 2 (Wispr's "hands free"): double-tap to start, press once more to finish — in a mock AI chat.
 private struct HandsFreeStep: View {
+    let back: () -> Void
     let next: () -> Void
     @ObservedObject private var dictation = DictationController.shared
     @State private var text = ""
@@ -496,7 +616,7 @@ private struct HandsFreeStep: View {
 
     private var hint: String? {
         if done { return nil }
-        if heldInstead { return "That was hold-to-talk. Tap \(dictation.hotkey.title) twice quickly instead, then talk." }
+        if heldInstead { return "That was hold-to-talk. Tap your shortcut twice quickly instead, then talk." }
         if (dictation.lastHeardNothing ?? .distantPast) > shownAt {
             return "Didn’t catch that. Speak a little louder, close to your microphone."
         }
@@ -504,31 +624,45 @@ private struct HandsFreeStep: View {
     }
 
     var body: some View {
-        VStack(spacing: 18) {
-            StepHeader(title: "Now go ", italic: "hands-free",
-                       message: "For longer thoughts, double-tap \(dictation.hotkey.title). Onword keeps listening until you press it once more.")
-            HStack(spacing: 10) {
-                step("1", "Double-tap")
-                Image(systemName: "arrow.right").foregroundStyle(Theme.inkTertiary)
-                step("2", "Talk freely")
-                Image(systemName: "arrow.right").foregroundStyle(Theme.inkTertiary)
-                step("3", "Press once to finish")
+        CenteredStep(back: back) {
+            (Text("Write a prompt ") + Text("hands free").italic()).font(OB.title)
+            HStack(spacing: 6) {
+                Text("Double-tap")
+                InlineKey(key: dictation.hotkey)
+                Text("and talk. Press it once more when you’re done.")
             }
-            MockApp(text: $text, placeholder: "Brain-dump an idea or a prompt for your AI assistant…",
-                    listening: dictation.state == .recording) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles").foregroundStyle(Logo.accent)
-                    Text("Message your AI assistant").font(Theme.sans(13.5, .medium))
-                    Spacer()
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 18))
-                        .foregroundStyle(text.isEmpty ? Theme.inkTertiary : Theme.ink)
+            .font(OB.subtitle)
+        } content: {
+            VStack(spacing: 20) {
+                AppShell(name: "AI Chat", symbol: "sparkles", tint: OB.progress, active: dictation.state == .recording) {
+                    PracticeEditor(text: $text) {
+                        HStack(spacing: 6) {
+                            Text("Double-tap")
+                            InlineKey(key: dictation.hotkey, size: 15)
+                            Text("and say...")
+                        }
+                        Text("“Draft a short note to the team about Friday’s launch, and ask who can help test it.”")
+                            .font(Theme.sans(15)).italic().fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 6) {
+                            Text("then press")
+                            InlineKey(key: dictation.hotkey, size: 15)
+                            Text("once to finish")
+                        }
+                    }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
+                .overlay(alignment: .topTrailing) {
+                    if done {
+                        OBPill(sticker: true, rotation: -8) { Text("Hands free!") }
+                            .offset(x: 60, y: -24)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                PracticeStatus(coaching: nil, hint: hint)
+                ShortcutLine()
             }
-            PracticeStatus(success: done ? "Hands-free works. Great for long messages and prompts." : nil, hint: hint)
-            ShortcutLine()
-            Spacer(minLength: 0)
-            StepFooter(title: "Finish", enabled: done, action: next)
+            .animation(.easeOut(duration: 0.15), value: done)
+        } footer: {
+            FooterButton(title: "Continue", enabled: done, action: next)
         }
         .onAppear {
             shownAt = Date()
@@ -539,31 +673,26 @@ private struct HandsFreeStep: View {
         }
         .onDisappear { dictation.clearPracticeSink(owner: owner) }
     }
-
-    private func step(_ number: String, _ label: String) -> some View {
-        HStack(spacing: 6) {
-            Text(number).font(Theme.sans(11, .bold)).foregroundStyle(Theme.onAccent)
-                .frame(width: 18, height: 18).background(Circle().fill(Theme.accent))
-            Text(label).font(Theme.sans(13, .medium))
-        }
-    }
 }
 
 private struct DoneStep: View {
+    let back: () -> Void
     @ObservedObject private var dictation = DictationController.shared
 
     var body: some View {
-        VStack(spacing: 22) {
-            StepHeader(title: "You’re ", italic: "all set",
-                       message: "Onword lives in your menu bar. A few things worth knowing:")
-            SettingsCard {
-                tip("Hold \(dictation.hotkey.title)", "Dictate in any app. Double-tap for hands-free, Esc to cancel.")
-                tip("⌃⌥S", "Open Scratchpad for quick notes.")
-                tip("⌃⌥M", "Start or stop Notetaker in a call. Onword can also notice calls and ask.", last: true)
+        CenteredStep(back: back) {
+            Text("You’re all set").font(OB.title)
+            Text("Onword lives in the Flow Bar above your Dock and in the menu bar.").font(OB.subtitle)
+        } content: {
+            OBCard(widget: true) {
+                tip(AnyView(InlineKey(key: dictation.hotkey, size: 15)), "Hold to dictate in any app. Double-tap for hands-free, Esc to cancel.")
+                Divider().overlay(OB.sand)
+                tip(AnyView(chip("⌃⌥S")), "Open the Scratchpad for quick notes.")
+                Divider().overlay(OB.sand)
+                tip(AnyView(chip("⌃⌥M")), "Start or stop Notetaker in a call. Onword can also notice calls and ask.")
             }
-            .frame(maxWidth: 560)
-            Spacer()
-            StepFooter(title: "Open Onword") {
+        } footer: {
+            FooterButton(title: "Open Onword") {
                 Onboarding.isComplete = true
                 WindowManager.shared.closeOnboarding()
                 WindowManager.shared.show(.dictation)
@@ -571,7 +700,18 @@ private struct DoneStep: View {
         }
     }
 
-    private func tip(_ key: String, _ text: String, last: Bool = false) -> some View {
-        SettingsRow(title: text, last: last) { KeyChip(text: key) }
+    private func chip(_ text: String) -> some View {
+        Text(text).font(Theme.sans(15, .medium)).foregroundStyle(OB.hex(0x30302F))
+            .padding(.horizontal, 4)
+            .background(RoundedRectangle(cornerRadius: 4).fill(OB.background))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(OB.chipBorder))
+    }
+
+    private func tip(_ key: AnyView, _ text: String) -> some View {
+        HStack(spacing: 16) {
+            key.frame(width: 80, alignment: .leading)
+            Text(text).font(Theme.sans(15)).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
     }
 }

@@ -31,18 +31,23 @@ final class WindowManager: NSObject, NSWindowDelegate {
     func showOnboarding() {
         let window = onboarding ?? {
             // First-run setup has no close button; running it again from Settings does.
+            // Same size as the main window, like Wispr Flow (whose setup runs inside its main window).
             let style: NSWindow.StyleMask = Onboarding.isComplete
-                ? [.titled, .closable, .fullSizeContentView] : [.titled, .fullSizeContentView]
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
+                ? [.titled, .closable, .resizable, .fullSizeContentView] : [.titled, .resizable, .fullSizeContentView]
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.hubSize(minimum: false)),
                                   styleMask: style, backing: .buffered, defer: false)
-            window.contentViewController = NSHostingController(rootView: OnboardingView())
+            let hosting = NSHostingController(rootView: OnboardingView())
+            hosting.sizingOptions = []
+            window.contentViewController = hosting
+            window.setContentSize(Self.hubSize(minimum: false))
+            window.contentMinSize = Self.hubSize(minimum: true)
             window.title = "Welcome to Onword"
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
-            window.backgroundColor = NSColor(Theme.frame)
-            window.appearance = Appearance.current.nsAppearance
+            window.backgroundColor = NSColor(OB.background)
+            window.appearance = NSAppearance(named: .aqua)   // setup is always light, as in Wispr Flow
             window.center()
             return window
         }()
@@ -61,7 +66,6 @@ final class WindowManager: NSObject, NSWindowDelegate {
     /// Re-applies the Light/Dark/System choice to the Hub.
     func applyAppearance() {
         hub?.appearance = Appearance.current.nsAppearance
-        onboarding?.appearance = Appearance.current.nsAppearance
     }
 
     /// The Scratchpad shortcut: hides the Hub if it's already showing the Scratchpad, otherwise opens it.
