@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Onword</title>
+<link rel="icon" href="images/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;1,500&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="./"><img src="images/icon.png" alt="" width="28" height="28"> Onword</a>
+  <nav><a href="./#google-calendar">Google Calendar</a><a href="privacy.html">Privacy</a><a href="https://github.com/h-thavy/onword">GitHub</a></nav>
+</header>
+
+<main class="doc">
+  <h1>Privacy Policy</h1>
+  <p class="small">Last updated: October 14, 2026</p>
+
+  <p>Onword is a free, open-source voice-to-text app for macOS. This policy explains what data Onword uses, where it is kept, and the choices you have. In short: <strong>everything stays on your Mac.</strong> Onword has no servers and no accounts, and its developer never receives your data.</p>
+
+  <h2>Data that stays on your Mac</h2>
+  <ul>
+    <li><strong>Your voice.</strong> Audio from your microphone is turned into text on your Mac by an on-device speech model. Dictation audio is never saved; only the resulting text is kept in your history.</li>
+    <li><strong>Meetings.</strong> When you use Notetaker, the call audio, transcript, summary and notes are saved on your Mac.</li>
+    <li><strong>Your settings, dictionary, snippets, notes and usage statistics.</strong></li>
+  </ul>
+  <p>All of this lives in <code>~/Library/Application Support/Onword/</code>. You choose how long history is kept in Settings → Data and Privacy, and you can delete it at any time.</p>
+
+  <h2>Google user data</h2>
+  <p>If you connect Google Calendar (Settings → Connections, or the Notetaker page), you sign in with Google in your browser and Onword requests these permissions:</p>
+  <ul>
+    <li><strong>Calendar, read-only</strong> (<code>calendar.readonly</code>): the list of your calendars (names and colours) and events in the coming days — each event’s title, start and end time, video-call link, attendees’ names, and whether you declined it.</li>
+    <li><strong>Your email address</strong> (<code>openid</code>, <code>email</code>): to show which Google account is connected.</li>
+  </ul>
+
+  <h3>How Onword uses it</h3>
+  <ul>
+    <li>To show your upcoming meetings in the Flow Bar and the Notetaker page.</li>
+    <li>To let you join a meeting’s video call and start notes in one click.</li>
+    <li>To name the meeting and its participants in the notes you take for it.</li>
+  </ul>
+  <p>Onword never creates, changes or deletes calendar events.</p>
+
+  <h3>How it is stored</h3>
+  <p>Onword talks to Google directly from your Mac. Your Google sign-in token and email address are kept in the macOS Keychain. Calendar events are held in memory to display them; the title and participants of a meeting you take notes in are saved with those notes on your Mac. Nothing is sent to Onword’s developer or to any other server.</p>
+
+  <h3>Sharing</h3>
+  <p>Onword does not sell, share, or transfer Google user data to anyone. It is not used for advertising, and it is not used to develop, improve or train any generalized AI or machine-learning model. No human reads it.</p>
+
+  <h3>Limited Use</h3>
+  <p>Onword’s use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+  <h3>Disconnecting</h3>
+  <p>Choose <strong>Disconnect</strong> in Settings → Connections. Onword revokes its access with Google and deletes the token and email from your Keychain. You can also remove access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
+
+  <h2>Other connections</h2>
+  <ul>
+    <li><strong>Speech model download.</strong> The first time you set up Onword, it downloads its speech model from Hugging Face. No personal data is sent.</li>
+    <li><strong>Update check.</strong> Onword checks GitHub for a newer version. It sends nothing about you.</li>
+    <li><strong>Mac Calendar.</strong> If you allow it, Onword reads your upcoming events through macOS Calendar, on your Mac.</li>
+    <li><strong>Apple Intelligence.</strong> Meeting summaries are written by Apple’s on-device model.</li>
+  </ul>
+
+  <h2>Permissions</h2>
+  <p>macOS asks you to allow the Microphone (to hear you), Accessibility (to type at your cursor), Input Monitoring (to notice your shortcut), and — only for Notetaker — System Audio Recording and Calendars. These are used only for the features described here.</p>
+
+  <h2>Children</h2>
+  <p>Onword is not directed at children under 13 and does not knowingly collect their data.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the new version will be posted on this page with a new date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or requests: open an issue at <a href="https://github.com/h-thavy/onword/issues">github.com/h-thavy/onword/issues</a>.</p>
+</main>
+
+<footer>
+  <span>© 2026 Onword · MIT License</span>
+  <span><a href="privacy.html">Privacy policy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/h-thavy/onword/issues">Contact</a></span>
+</footer>
+</body>
+</html>

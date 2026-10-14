@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onword — free, private voice-to-text for your Mac</title>
+<meta name="description" content="Onword is a free, open-source Mac app: hold a key in any app, talk, and your words appear at the cursor. Speech recognition runs entirely on your Mac.">
+<link rel="icon" href="images/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,500;1,500&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="./"><img src="images/icon.png" alt="" width="28" height="28"> Onword</a>
+  <nav><a href="#google-calendar">Google Calendar</a><a href="privacy.html">Privacy</a><a href="https://github.com/h-thavy/onword">GitHub</a></nav>
+</header>
+
+<main>
+  <section class="hero">
+    <img class="hero-icon" src="images/icon.png" alt="Onword app icon" width="112" height="112">
+    <h1>Speak, and it’s <em>written</em>.</h1>
+    <p class="lead">Onword is a free, open-source app for macOS. Hold a key in any app, talk, and let go — your words appear at the cursor. Speech recognition runs entirely on your Mac.</p>
+    <div class="cta">
+      <a class="button" href="https://github.com/h-thavy/onword/releases/latest">Download for Mac</a>
+      <a class="button quiet" href="https://github.com/h-thavy/onword">View source</a>
+    </div>
+    <p class="small">Requires a Mac with Apple Silicon on macOS 14 or later. Or install from Terminal:</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install.sh | bash</code></pre>
+  </section>
+
+  <img class="shot" src="images/insights.png" alt="Onword's main window">
+
+  <section>
+    <h2>What Onword does</h2>
+    <div class="grid">
+      <div><h3>Dictation</h3><p>Hold a key, talk, let go. Filler words disappear, “scratch that” deletes your last sentence, and 99 languages are supported.</p></div>
+      <div><h3>Notetaker</h3><p>Records calls without a bot joining, with a live transcript, who-said-what, and a summary written on your Mac.</p></div>
+      <div><h3>Flow Bar</h3><p>A small bar above the Dock to start dictating or taking notes, and to see your upcoming meetings.</p></div>
+      <div><h3>Private by design</h3><p>No account, no subscription, no server. Your voice and your text stay on your Mac.</p></div>
+    </div>
+  </section>
+
+  <section id="google-calendar" class="card">
+    <h2>Google Calendar</h2>
+    <p>Connecting Google Calendar is optional. If you click <strong>Connect</strong> next to Google Calendar in <strong>Settings → Connections</strong> (or <strong>Connect Google Calendar</strong> on the Notetaker page), Onword asks Google for <strong>read-only</strong> access to your calendars so it can:</p>
+    <ul>
+      <li>show your upcoming meetings in the Flow Bar and the Notetaker page;</li>
+      <li>let you join a video call and start meeting notes in one click;</li>
+      <li>name the meeting and its participants in your notes.</li>
+    </ul>
+    <p>Onword talks to Google directly from your Mac — there is no Onword server. It never changes, creates or deletes events, and never sells or shares your data. You can disconnect at any time in Settings, which also revokes Onword’s access with Google. Details are in the <a href="privacy.html">privacy policy</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <span>© 2026 Onword · MIT License</span>
+  <span><a href="privacy.html">Privacy policy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/h-thavy/onword/issues">Contact</a></span>
+</footer>
+</body>
+</html>
