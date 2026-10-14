@@ -42,10 +42,16 @@ final class HotkeyMonitor {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// Called when the shortcut key was pressed in one of Onword's windows but the tap never saw it:
+    /// the tap exists but macOS isn't delivering keys to it (Input Monitoring granted too recently).
+    var onDeaf: (() -> Void)?
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isDown = false
+    private var localMonitor: Any?
+    /// When the tap last received a modifier change.
+    private var lastTapEventAt = Date.distantPast
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "hotkey")
 
     var isRunning: Bool { tap != nil }
@@ -74,6 +80,17 @@ final class HotkeyMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         runLoopSource = source
         CGEvent.tapEnable(tap: tap, enable: true)
+        // Keys pressed in Onword's own windows always arrive here, so they show whether the tap hears them too.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            guard let self, Int64(event.keyCode) == self.key.keyCode, self.tap != nil else { return event }
+            let pressedAt = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard self.tap != nil, self.lastTapEventAt < pressedAt.addingTimeInterval(-0.5) else { return }
+                self.log.error("Shortcut pressed in Onword but the event tap received nothing")
+                self.onDeaf?()
+            }
+            return event
+        }
         log.notice("Event tap started")
         return true
     }
@@ -81,6 +98,8 @@ final class HotkeyMonitor {
     func stop() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes) }
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        localMonitor = nil
         tap = nil
         runLoopSource = nil
         isDown = false
@@ -97,6 +116,7 @@ final class HotkeyMonitor {
                 DispatchQueue.main.async { self.onEscape?() }
             }
         case .flagsChanged:
+            lastTapEventAt = Date()
             guard event.getIntegerValueField(.keyboardEventKeycode) == key.keyCode else { return }
             let down = event.flags.contains(key.flag)
             guard down != isDown else { return }

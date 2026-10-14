@@ -256,6 +256,7 @@ final class DictationController: ObservableObject {
             if !self.hotkeyTestMode { self.handle(self.gesture.release()) }
         }
         hotkeyMonitor.onEscape = { [weak self] in self?.cancel() }
+        hotkeyMonitor.onDeaf = { [weak self] in self?.reopenForShortcut(reason: "the shortcut isn't receiving keys") }
         // Test hook: ONWORD_TEST_HOTKEY=1 lets a script press the shortcut with a distributed notification
         // "io.github.h-thavy.onword.test-hotkey" (object "down" / "up"); synthetic key events are often
         // swallowed by other dictation apps.
@@ -281,10 +282,12 @@ final class DictationController: ObservableObject {
     func refreshPermissions() {
         if Permissions.inputMonitoring, !inputMonitoringAtLaunch, !relaunching,
            ProcessInfo.processInfo.environment["ONWORD_TEST_HOTKEY"] == nil {
+            // macOS takes a few seconds to apply the grant; a reopen right away can still be deaf (and is
+            // then caught by `onDeaf`).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.reopenForShortcut(reason: "Input Monitoring granted while running")
+            }
             relaunching = true
-            log.notice("Input Monitoring granted while running; reopening so the shortcut works")
-            // Let Onword come back to the front first, so the reopen lands where you were.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { AppRelaunch.now() }
         }
         if Permissions.inputMonitoring {
             // A tap created before the grant may never receive events; recreate it once.
@@ -318,6 +321,19 @@ final class DictationController: ObservableObject {
 
         // A permission granted in System Settings brings the asking window back and closes the pane Onword opened.
         if let origin = Permissions.resolvePendingRequest() { WindowManager.shared.bringForward(origin) }
+    }
+
+    /// Reopens Onword so macOS delivers key presses to the shortcut; at most every 20 s, so it can't loop.
+    private func reopenForShortcut(reason: String) {
+        let key = "lastShortcutReopen"
+        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 20 else {
+            log.error("Not reopening again (\(reason, privacy: .public)); reopened \(Int(Date().timeIntervalSince(last))) s ago")
+            return
+        }
+        UserDefaults.standard.set(Date(), forKey: key)
+        log.notice("Reopening so the shortcut works: \(reason, privacy: .public)")
+        AppRelaunch.now()
     }
 
     func requestPermissions() {
