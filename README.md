@@ -87,7 +87,7 @@ Speech-to-text runs on your Mac with [WhisperKit](https://github.com/argmaxinc/W
 | System Audio Recording | Only for Notetaker, to record the other side of a call |
 | Calendars | Optional — to show upcoming meetings |
 
-Releases aren't signed with an Apple Developer ID, so after an update macOS may ask for Accessibility and Input Monitoring again: in **System Settings → Privacy & Security**, remove Onword with **–** and add it back with **+**.
+Releases are signed with Onword's own certificate, so permissions carry over from one update to the next. If a permission ever shows as on in System Settings but Onword still asks for it, click **Allow** in Onword's **Settings → System**: it clears the old entry and asks again.
 </details>
 
 <details>

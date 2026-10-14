@@ -4,7 +4,10 @@
 #   scripts/release.sh                 # build only
 #   scripts/release.sh --publish       # also create the GitHub release vX.Y.Z (needs `gh`)
 #
-# Release builds are ad-hoc signed so no personal signing identity ships inside the app.
+# Releases are signed with the "Onword Release" certificate (self-made, no personal details) so every
+# version has the same identity: macOS keeps Accessibility, Input Monitoring and the Keychain item across
+# updates. Its keychain and password live outside the repo, in ONWORD_SIGNING_DIR (default
+# ../onword-backups/signing). Without it the build falls back to ad-hoc signing, with a warning.
 # The asset names never change, so the installer can always fetch .../releases/latest/download/Onword.zip.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,7 +19,22 @@ swift test
 # Releases ship the Google sign-in client (Resources/GoogleOAuth.plist, git-ignored) so "Connect Google
 # Calendar" works; set INCLUDE_GOOGLE_OAUTH=0 to leave it out. Until Google verifies the project, sign-in
 # is limited to its test users (or shows Google's "unverified app" warning once published).
-OUT_DIR=dist/build SIGN_IDENTITY=- SKIP_GOOGLE_OAUTH=$([[ "${INCLUDE_GOOGLE_OAUTH:-1}" == "1" ]] && echo 0 || echo 1) \
+SIGNING_DIR="${ONWORD_SIGNING_DIR:-../onword-backups/signing}"
+RELEASE_IDENTITY="-"
+if [[ -f "$SIGNING_DIR/onword-signing.keychain-db" && -f "$SIGNING_DIR/keychain-password.txt" ]]; then
+  KEYCHAIN="$(cd "$SIGNING_DIR" && pwd)/onword-signing.keychain-db"
+  security unlock-keychain -p "$(cat "$SIGNING_DIR/keychain-password.txt")" "$KEYCHAIN"
+  # codesign only finds identities in keychains on the search list.
+  if ! security list-keychains -d user | grep -q "$KEYCHAIN"; then
+    security list-keychains -d user -s $(security list-keychains -d user | tr -d '"') "$KEYCHAIN"
+  fi
+  RELEASE_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/"Onword Release"/ {print $2; exit}')"
+fi
+if [[ -z "$RELEASE_IDENTITY" || "$RELEASE_IDENTITY" == "-" ]]; then
+  RELEASE_IDENTITY="-"
+  echo "warning: Onword Release certificate not found; signing ad-hoc (permissions reset after this update)" >&2
+fi
+OUT_DIR=dist/build SIGN_IDENTITY="$RELEASE_IDENTITY" SKIP_GOOGLE_OAUTH=$([[ "${INCLUDE_GOOGLE_OAUTH:-1}" == "1" ]] && echo 0 || echo 1) \
   scripts/build-app.sh
 [[ -f dist/build/Onword.app/Contents/Resources/GoogleOAuth.plist ]] && echo "note: Google sign-in client INCLUDED in this release"
 codesign --verify --deep --strict dist/build/Onword.app

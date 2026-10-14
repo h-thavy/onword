@@ -51,8 +51,11 @@ enum Permissions {
     /// app, so after the first time Onword opens the pane directly instead.
     static func requestAccessibility(from origin: PendingRequest.Origin) {
         guard !AXIsProcessTrusted() else { return }
+        // A grant for an earlier build stays listed (switched on) but doesn't apply to this one, so Allow
+        // would lead to a switch that does nothing. Clear it; asking again adds this build.
+        let cleared = clearStaleGrant("Accessibility")
         let promptedKey = "accessibilityPrompted"
-        if !UserDefaults.standard.bool(forKey: promptedKey) {
+        if cleared || !UserDefaults.standard.bool(forKey: promptedKey) {
             UserDefaults.standard.set(true, forKey: promptedKey)
             settingsWasRunning = systemSettings != nil
             pendingRequest = (.accessibility, origin)
@@ -64,7 +67,25 @@ enum Permissions {
     }
 
     static func requestInputMonitoring(from origin: PendingRequest.Origin) {
+        guard !CGPreflightListenEventAccess() else { return }
+        clearStaleGrant("ListenEvent")
         if !CGRequestListenEventAccess() { openSettings("Privacy_ListenEvent", for: .inputMonitoring, from: origin) }
+    }
+
+    /// Releases are signed per build (ad hoc), and macOS ties these permissions to the exact build: after an
+    /// update the old entry is still there and on, but no longer matches. Removes Onword's entry for `service`
+    /// (only ever called while this build lacks the permission). Returns whether it ran.
+    @discardableResult
+    private static func clearStaleGrant(_ service: String) -> Bool {
+        guard let id = Bundle.main.bundleIdentifier else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", service, id]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     static func openSettings(_ pane: String, for request: PendingRequest, from origin: PendingRequest.Origin) {
