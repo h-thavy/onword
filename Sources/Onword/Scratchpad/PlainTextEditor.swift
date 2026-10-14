@@ -10,6 +10,13 @@ struct PlainTextEditor: NSViewRepresentable {
     var placeholder: String = ""
     /// Changes when a different document is shown, so the cursor resets.
     var documentID: AnyHashable?
+    /// Optional styling (the Scratchpad window): fixed line height, text and caret colours, insets.
+    var lineHeight: CGFloat?
+    var textColor: NSColor?
+    var caretColor: NSColor?
+    var inset = NSSize(width: 18, height: 16)
+    /// Extra scrollable space below the text, so it can clear floating buttons.
+    var bottomOverscroll: CGFloat = 0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -22,10 +29,11 @@ struct PlainTextEditor: NSViewRepresentable {
         textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
-        textView.textContainerInset = NSSize(width: 18, height: 16)
         textView.drawsBackground = false
         scrollView.drawsBackground = false
+        applyStyle(to: textView, in: scrollView)
         textView.string = text
+        restyleText(in: textView)
         context.coordinator.placeholder(placeholder, in: textView)
         OwnWindowInserter.lastEditor = textView
         focus(textView)
@@ -37,18 +45,53 @@ struct PlainTextEditor: NSViewRepresentable {
         DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
     }
 
+    /// Font, colours, insets and line height. A CSS-style line height is a line spacing plus half of
+    /// the extra space above the first line, so the caret keeps the font's height.
+    private func applyStyle(to textView: NSTextView, in scrollView: NSScrollView) {
+        var attributes = textView.typingAttributes
+        attributes[.font] = font
+        if let textColor {
+            textView.textColor = textColor
+            attributes[.foregroundColor] = textColor
+        }
+        if let caretColor { textView.insertionPointColor = caretColor }
+        var inset = inset
+        if let lineHeight {
+            let natural = ceil(font.ascender - font.descender + font.leading)
+            let style = NSMutableParagraphStyle()
+            style.lineSpacing = max(0, lineHeight - natural)
+            attributes[.paragraphStyle] = style
+            textView.defaultParagraphStyle = style
+            inset.height += max(0, lineHeight - natural) / 2
+        }
+        textView.typingAttributes = attributes
+        textView.textContainerInset = inset
+        if bottomOverscroll > 0 {
+            scrollView.automaticallyAdjustsContentInsets = false
+            scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: bottomOverscroll, right: 0)
+        }
+    }
+
+    /// Re-applies the typing attributes to all text after it's replaced wholesale.
+    private func restyleText(in textView: NSTextView) {
+        guard lineHeight != nil || textColor != nil, let storage = textView.textStorage else { return }
+        storage.setAttributes(textView.typingAttributes, range: NSRange(location: 0, length: storage.length))
+    }
+
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         context.coordinator.parent = self
         if context.coordinator.documentID != documentID {
             context.coordinator.documentID = documentID
             textView.string = text
+            restyleText(in: textView)
             textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
             textView.undoManager?.removeAllActions()
             focus(textView)
         } else if textView.string != text {
             let selection = textView.selectedRange()
             textView.string = text
+            restyleText(in: textView)
             textView.setSelectedRange(NSRange(location: min(selection.location, (text as NSString).length), length: 0))
         }
         context.coordinator.placeholder(placeholder, in: textView)
@@ -95,6 +138,8 @@ enum OwnWindowInserter {
 
     static var focusedTextView: NSTextView? {
         if let textView = NSApp.keyWindow?.firstResponder as? NSTextView { return textView }
+        // The floating Scratchpad panel can be key while another app stays frontmost.
+        if let textView = MainActor.assumeIsolated({ ScratchpadWindow.shared.keyTextView }) { return textView }
         if let editor = lastEditor, editor.window?.isVisible == true { return editor }
         return nil
     }

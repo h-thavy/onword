@@ -57,6 +57,32 @@ enum Theme {
     }
 }
 
+// MARK: Scratchpad window
+// Extra tokens for the floating Scratchpad window, whose values follow Wispr Flow's Scratchpad
+// (frame, hairlines and ink reuse `frame`, `border`, `ink`, `inkTertiary` above).
+
+extension Theme {
+    /// Editor card inside the frame (background).
+    static let scratchpadCard = dynamic(light: 0xFCFCFB, dark: 0x1A1A1A)
+    /// Active rows and pressed buttons (neutral-200).
+    static let scratchpadActive = dynamic(light: 0xEEEBE3, dark: 0x30302F)
+    /// Placeholder, inactive tabs, muted text (neutral-500).
+    static let scratchpadMuted = dynamic(light: 0x4D4A42, dark: 0x9D9C98)
+    /// Toolbar icons and the logo (neutral-600).
+    static let scratchpadIcon = dynamic(light: 0x30302F, dark: 0xDEDDD7)
+    /// Hovered tab text (vast-900).
+    static let scratchpadHoverInk = dynamic(light: 0x30302F, dark: 0xE9E8E1)
+    /// The Copy pill and its label (shade-black / shade-white).
+    static let scratchpadPill = dynamic(light: 0x000000, dark: 0xE9E8E1)
+    static let scratchpadOnPill = dynamic(light: 0xFFFFFF, dark: 0x1A1A1A)
+    /// Round floating buttons and popovers (shade-white).
+    static let scratchpadFloating = dynamic(light: 0xFFFFFF, dark: 0x1A1A1A)
+    /// Text cursor (glow-300), the same in light and dark.
+    static let caret = NSColor(srgbRed: 1, green: 0xA9 / 255, blue: 0x46 / 255, alpha: 1)
+    /// Search-match highlight.
+    static let searchHighlight = Color(red: 1, green: 212 / 255, blue: 103 / 255).opacity(0.4)
+}
+
 // MARK: - Components
 
 /// Page title row: serif title, optional badge, actions on the right.

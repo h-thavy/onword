@@ -64,15 +64,6 @@ final class WindowManager: NSObject, NSWindowDelegate {
         onboarding?.appearance = Appearance.current.nsAppearance
     }
 
-    /// The Scratchpad shortcut: hides the Hub if it's already showing the Scratchpad, otherwise opens it.
-    func toggle(_ page: HubRouter.Page) {
-        if let hub, hub.isKeyWindow, HubRouter.shared.page == page {
-            hub.close()
-        } else {
-            show(page)
-        }
-    }
-
     private func makeHub() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 720),
