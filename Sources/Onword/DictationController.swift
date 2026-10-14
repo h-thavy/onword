@@ -201,6 +201,11 @@ final class DictationController: ObservableObject {
     private var levelTimer: Timer?
     private var permissionTimer: Timer?
     private var lastPermissionSummary = ""
+    /// macOS only lets an app see key presses if Input Monitoring was on when it launched: a grant while
+    /// running leaves the shortcut deaf until a restart. (macOS offers "Quit & Reopen" for this, but that
+    /// prompt closes with System Settings.) So a grant while running reopens Onword.
+    private let inputMonitoringAtLaunch = Permissions.inputMonitoring
+    private var relaunching = false
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "dictation")
 
     /// Whisper needs some audio to work with; anything shorter is treated as an accidental press.
@@ -274,6 +279,13 @@ final class DictationController: ObservableObject {
     /// Re-checks permissions. While anything is missing this runs every 2 s on its own,
     /// so granting a permission in System Settings takes effect without restarting the app.
     func refreshPermissions() {
+        if Permissions.inputMonitoring, !inputMonitoringAtLaunch, !relaunching,
+           ProcessInfo.processInfo.environment["ONWORD_TEST_HOTKEY"] == nil {
+            relaunching = true
+            log.notice("Input Monitoring granted while running; reopening so the shortcut works")
+            // Let Onword come back to the front first, so the reopen lands where you were.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { AppRelaunch.now() }
+        }
         if Permissions.inputMonitoring {
             // A tap created before the grant may never receive events; recreate it once.
             if hotkeyMonitor.isRunning && !hotkeyMonitor.createdWithAccess { hotkeyMonitor.stop() }

@@ -187,3 +187,16 @@ final class UpdateChecker: ObservableObject {
         return false
     }
 }
+
+/// Quits Onword and opens it again.
+enum AppRelaunch {
+    @MainActor static func now() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"",
+                             Bundle.main.bundlePath]
+        try? process.run()   // keeps running after Onword quits
+        NSApp.terminate(nil)
+    }
+}
