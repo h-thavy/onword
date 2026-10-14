@@ -6,3 +6,4 @@ dist/
 DerivedData/
 .DS_Store
 Resources/GoogleOAuth.plist
+.claude/
