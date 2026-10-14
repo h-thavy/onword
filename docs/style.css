@@ -55,3 +55,15 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; }
 .doc { max-width: 760px; padding-bottom: 40px; }
 .doc li { margin: 6px 0; }
 footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 24px; padding-bottom: 32px; border-top: 1px solid var(--line); margin-top: 40px; font-size: 14px; color: var(--ink-2); }
+
+/* Install command with a copy button. The command scrolls sideways instead of being cut off. */
+.cmd { display: flex; align-items: center; gap: 8px; max-width: 760px; margin: 8px auto 0; padding: 6px 6px 6px 14px;
+  background: var(--code); border-radius: 10px; text-align: left; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 13px; padding: 6px 0; scrollbar-width: thin; }
+.copy { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-2); cursor: pointer; }
+.copy:hover { color: var(--ink); }
+.copy .icon-check { display: none; }
+.copy.copied { color: #10b981; border-color: #10b981; }
+.copy.copied .icon-copy { display: none; }
+.copy.copied .icon-check { display: block; }
