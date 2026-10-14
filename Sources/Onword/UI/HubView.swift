@@ -7,13 +7,14 @@ final class HubRouter: ObservableObject {
     static let shared = HubRouter()
 
     enum Page: String, CaseIterable, Identifiable {
-        case dictation, notetaker, dictionary, snippets, scratchpad
+        case dictation, notetaker, insights, dictionary, snippets, scratchpad
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .dictation: "Dictation"
             case .notetaker: "Notetaker"
+            case .insights: "Insights"
             case .dictionary: "Dictionary"
             case .snippets: "Snippets"
             case .scratchpad: "Scratchpad"
@@ -24,6 +25,7 @@ final class HubRouter: ObservableObject {
             switch self {
             case .dictation: "mic"
             case .notetaker: "smallcircle.filled.circle"
+            case .insights: "chart.bar"
             case .dictionary: "book.closed"
             case .snippets: "scissors"
             case .scratchpad: "note.text"
@@ -69,6 +71,7 @@ struct HubView: View {
         switch router.page {
         case .dictation: DictationPage()
         case .notetaker: NotetakerPage()
+        case .insights: InsightsPage()
         case .dictionary: DictionaryPage()
         case .snippets: SnippetsPage()
         case .scratchpad: ScratchpadPage()

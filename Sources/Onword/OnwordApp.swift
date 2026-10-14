@@ -69,6 +69,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             WindowManager.shared.installSnapshotSignal()
+            if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_PAGE"].flatMap(HubRouter.Page.init) {   // test hook
+                WindowManager.shared.show(page)
+            }
             if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] {   // test hook
                 WindowManager.shared.show()
                 HubRouter.shared.settingsTab = page == "languages" ? .general : HubRouter.SettingsTab(rawValue: page) ?? .general
