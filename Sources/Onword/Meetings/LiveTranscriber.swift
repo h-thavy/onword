@@ -101,7 +101,7 @@ final class LiveTranscriber {
                                       speaker: job.track, text: $0.text)
                 })
             } catch {
-                log.error("Live transcription failed: \(error.localizedDescription)")
+                log.error("Live transcription failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

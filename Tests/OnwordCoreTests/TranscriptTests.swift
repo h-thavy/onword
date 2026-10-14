@@ -133,7 +133,8 @@ final class TranscriptTests: XCTestCase {
     }
 
     func testDropsVideoOutrosAtAnyLength() {
-        let segments = [seg(0, 4, "s1", "金曜日までに共有してください。"), seg(60, 66, "s1", "ご視聴ありがとうございました")]
+        let segments = [seg(0, 4, "s1", "金曜日までに共有してください。"), seg(60, 66, "s1", "ご視聴ありがとうございました"),
+                        seg(70, 75, "me", "Please stay tuned until the next video is uploaded."), seg(80, 86, "me", "Don't forget to like and subscribe!")]
         XCTAssertEqual(TranscriptMerger.dropHallucinations(segments).map(\.text), ["金曜日までに共有してください。"])
     }
 

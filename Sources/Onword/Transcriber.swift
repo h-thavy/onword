@@ -143,18 +143,37 @@ actor Transcriber {
     /// `progress` reports the download, 0…1.
     func load(_ model: Model, downloadBase: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws {
         if loadedModel == model, kit != nil { return }
+        // One load at a time across every Transcriber (dictation, meetings, Khmer): two loading the same model
+        // at once can fail, which would look like a damaged download.
+        await ModelLoadQueue.shared.acquire()
+        do {
+            try await loadNow(model, downloadBase: downloadBase, progress: progress)
+            await ModelLoadQueue.shared.release()
+        } catch {
+            await ModelLoadQueue.shared.release()
+            throw error
+        }
+    }
+
+    private func loadNow(_ model: Model, downloadBase: URL, progress: (@Sendable (Double) -> Void)?) async throws {
+        if loadedModel == model, kit != nil { return }
         kit = nil
         loadedModel = nil
 
         if let folder = Self.localFolder(for: model, downloadBase: downloadBase) {
-            do {
-                kit = try await WhisperKit(config(model, folder: folder, downloadBase: downloadBase))
-                loadedModel = model
-                return
-            } catch {
-                log.error("Model on disk didn't load (\(error.localizedDescription, privacy: .public)); downloading it again")
-                try? FileManager.default.removeItem(at: folder)
+            // Tried twice before it's treated as damaged and downloaded again.
+            for attempt in 1...2 {
+                do {
+                    kit = try await WhisperKit(config(model, folder: folder, downloadBase: downloadBase))
+                    loadedModel = model
+                    return
+                } catch {
+                    log.error("Model on disk didn't load, attempt \(attempt) (\(error.localizedDescription, privacy: .public))")
+                    if attempt == 1 { try? await Task.sleep(for: .seconds(2)) }
+                }
             }
+            log.error("Downloading \(model.rawValue, privacy: .public) again")
+            try? FileManager.default.removeItem(at: folder)
         }
 
         let folder = try await Self.download(model, downloadBase: downloadBase, progress: progress)
@@ -362,5 +381,21 @@ actor Transcriber {
             chunkingStrategy: ChunkingStrategy.none
         )
         return try await kit.transcribe(audioArray: samples, decodeOptions: options)
+    }
+}
+
+/// Lets one speech model load at a time.
+actor ModelLoadQueue {
+    static let shared = ModelLoadQueue()
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard busy else { busy = true; return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func release() {
+        if waiting.isEmpty { busy = false } else { waiting.removeFirst().resume() }
     }
 }

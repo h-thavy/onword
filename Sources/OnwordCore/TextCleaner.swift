@@ -51,6 +51,9 @@ public struct TextCleaner {
         "チャンネル登録よろしくお願いします", "チャンネル登録お願いします", "おやすみなさい",
         "字幕視聴ありがとうございました", "謝謝觀看", "谢谢观看", "感谢观看", "請不吝點贊訂閱轉發打賞支持明鏡與點點欄目",
         "字幕由amaraorg社区提供", "시청해주셔서 감사합니다", "시청해 주셔서 감사합니다", "구독과 좋아요 부탁드립니다",
+        "please stay tuned until the next video is uploaded", "see you in the next video", "see you in the next one",
+        "please subscribe to my channel", "dont forget to like and subscribe", "like and subscribe",
+        "thanks for watching see you next time", "thank you for watching see you next time",
     ]
 
     /// Whether the text is one of the video outros (see `videoOutros`).

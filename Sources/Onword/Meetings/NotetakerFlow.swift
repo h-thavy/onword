@@ -92,6 +92,36 @@ final class NotetakerFlow {
 
     /// Test hooks for snapshots: ONWORD_TEST_NOTEPAD=<index>[:tab] opens a note in the Notepad;
     /// ONWORD_TEST_ISLAND=reminder|detected|stopping|stopped|mistake|summary|maxlength|mic shows that surface.
+    private static var liveTest: LiveTranscriber?
+
+    private func runLiveTest(_ folder: URL) {
+        let mic = (try? AudioFileWriter.read(folder.appending(path: "mic.wav"))) ?? []
+        let system = (try? AudioFileWriter.read(folder.appending(path: "system.wav"))) ?? []
+        let live = LiveTranscriber()
+        Self.liveTest = live
+        let controller = DictationController.shared
+        let languages = ProcessInfo.processInfo.environment["ONWORD_TEST_LANGUAGES"].map { $0.split(separator: ",").map(String.init) }
+            ?? controller.selectedLanguages
+        live.onUpdate = { segments in
+            let text = segments.map { String(format: "%6.1f [%@] %@", $0.start, $0.speaker, $0.text) }.joined(separator: "\n")
+            try? text.write(to: folder.appending(path: "live.txt"), atomically: true, encoding: .utf8)
+        }
+        live.start(model: controller.model, language: controller.language == "auto" ? nil : controller.language, languages: languages)
+        let second = 16_000, total = max(mic.count, system.count) + 10 * second
+        Task { @MainActor in
+            var offset = 0
+            while offset < total {
+                func piece(_ track: [Float]) -> [Float] {
+                    (offset..<offset + second).map { $0 < track.count ? track[$0] : 0 }
+                }
+                live.mic.append(piece(mic))
+                live.system.append(piece(system))
+                offset += second
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
     func runTestHooks() {
         let env = ProcessInfo.processInfo.environment
         if let value = env["ONWORD_TEST_NOTEPAD"] {
@@ -120,6 +150,9 @@ final class NotetakerFlow {
                 }
             }
         }
+        // ONWORD_TEST_LIVE=<folder with mic.wav, system.wav> streams them through the live transcript at 4× speed
+        // and writes what it shows to <folder>/live.txt.
+        if let folder = env["ONWORD_TEST_LIVE"] { runLiveTest(URL(fileURLWithPath: folder)) }
         // ONWORD_TEST_REPROCESS=1 transcribes every meeting again (e.g. from recording.m4a).
         if env["ONWORD_TEST_REPROCESS"] != nil {
             for meeting in MeetingStore.shared.meetings where meeting.status == .ready { MeetingRecorder.shared.process(meeting.id) }
