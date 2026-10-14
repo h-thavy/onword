@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import os
 import SwiftUI
 
 /// The Flow Bar: a small bar centred above the Dock that shows dictation and Notetaker at a glance and
@@ -33,6 +34,11 @@ final class FlowBar {
     private var hiddenTimer: Timer?
     private var tooltipTimer: Timer?
     private var wasDictating = false
+    /// Whether the Dock is on screen where the bar is; the bar sits above it, or near the screen bottom
+    /// when it's hidden (full-screen apps, auto-hide).
+    private var dockShowing: Bool?
+    private var dockTimer: Timer?
+    private var relayoutWork: DispatchWorkItem?
     private var wasInMeeting = false
 
     private init() {}
@@ -106,6 +112,11 @@ final class FlowBar {
             MainActor.assumeIsolated { self?.pointerMoved() }
             return event
         }) { mouseMonitors.append(local) }
+
+        // Follow the Dock: Wispr re-anchors when it shows or hides, fading out while it moves.
+        dockTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            MainActor.assumeIsolated { FlowBar.shared.checkDock() }
+        }
 
         refreshVisibility()
 
@@ -232,6 +243,7 @@ final class FlowBar {
         // Follow the pointer to another display.
         let mouse = NSEvent.mouseLocation
         if !(panel.screen?.frame.contains(mouse) ?? true), NSScreen.screens.contains(where: { $0.frame.contains(mouse) }) {
+            dockShowing = nil   // the other display has its own Dock state
             reposition()
         }
         let point = pointerInCanvas()
@@ -382,6 +394,53 @@ final class FlowBar {
 
     // MARK: - Placement
 
+    /// The Dock's window (owned by the Dock, at the Dock window level) is on screen on `screen`. It's
+    /// hidden in full-screen Spaces and while an auto-hidden Dock is tucked away.
+    private static func isDockShowing(on screen: NSScreen) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
+        else { return true }
+        let dockLevel = Int(CGWindowLevelForKey(.dockWindow))
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        for window in windows where (window[kCGWindowOwnerName as String] as? String) == "Dock"
+            && (window[kCGWindowLayer as String] as? Int) == dockLevel {
+            guard let dict = window[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
+            // CoreGraphics measures from the top of the main screen; AppKit from the bottom.
+            let cocoa = NSRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height)
+            if cocoa.intersects(screen.frame) { return true }
+        }
+        return false
+    }
+
+    /// Re-checks the Dock; when it appears or disappears, fades the bar out, moves it, and fades it back in.
+    private func checkDock() {
+        guard let panel, panel.isVisible, let screen = panel.screen else { return }
+        let showing = Self.isDockShowing(on: screen)
+        guard showing != dockShowing else { return }
+        let first = dockShowing == nil
+        dockShowing = showing
+        Logger(subsystem: "io.github.h-thavy.onword", category: "flowbar")
+            .notice("Dock \(showing ? "shown" : "hidden", privacy: .public); bar \(showing ? "above the Dock" : "near the screen bottom", privacy: .public)")
+        if first { reposition(); return }
+        relayoutWork?.cancel()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            panel.animator().alphaValue = 0
+        }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.panel else { return }
+                self.reposition()
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    panel.animator().alphaValue = 1
+                }
+            }
+        }
+        relayoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
     /// Centres the canvas above the Dock (or the bottom of the screen when the Dock is hidden or on the
     /// side) of the screen the pointer is on.
     private func reposition() {
@@ -391,7 +450,10 @@ final class FlowBar {
         else { return }
         let visible = screen.visibleFrame
         let size = FlowBarLayout.canvas
-        let origin = NSPoint(x: (visible.midX - size.width / 2).rounded(), y: visible.minY)
+        // Above the Dock when it's showing; otherwise near the bottom of the screen.
+        let showing = dockShowing ?? Self.isDockShowing(on: screen)
+        let bottom = showing ? visible.minY : screen.frame.minY
+        let origin = NSPoint(x: (visible.midX - size.width / 2).rounded(), y: bottom)
         if panel.frame.origin != origin || panel.frame.size != size {
             panel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
