@@ -463,8 +463,11 @@ private struct TranscriptPanel: View {
     }
 
     private func copyTranscript() {
-        let text = lines.map { "\($0.speaker == "me" ? meeting.name(for: "me") : (["You", "Them"].contains($0.speaker) ? $0.speaker : meeting.name(for: $0.speaker))): \($0.text)" }
-            .joined(separator: "\n")
+        let text = lines.map { line -> String in
+            let name: String = line.speaker == "You" || line.speaker == "Them" ? line.speaker : meeting.name(for: line.speaker)
+            return name + ": " + line.text
+        }
+        .joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         copied = true
@@ -507,8 +510,11 @@ private struct TranscriptGroup: View {
     }
 
     private func bubble(_ index: Int) -> UnevenRoundedRectangle {
-        let first = index == 0, last = index == texts.count - 1
-        return UnevenRoundedRectangle(topLeadingRadius: first ? 12 : 4, bottomLeadingRadius: last && !first ? 12 : (first && texts.count == 1 ? 12 : 4),
+        let first = index == 0
+        let last = index == texts.count - 1
+        let top: CGFloat = first ? 12 : 4
+        let bottom: CGFloat = last ? 12 : 4
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
                                       bottomTrailingRadius: 12, topTrailingRadius: 12)
     }
 

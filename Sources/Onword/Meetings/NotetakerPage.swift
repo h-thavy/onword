@@ -648,10 +648,7 @@ private struct SidePreview: View {
                         .padding(.bottom, 8)
                 }
                 Text(meeting.title).font(Theme.sans(18, .semibold))
-                let countdown = NT.countdown(start: meeting.start, end: meeting.end)?.text
-                Text(([NT.datePill(meeting.start), NT.timeRange(meeting.start, meeting.end)] + (countdown.map { [$0] } ?? []))
-                    .joined(separator: " • "))
-                    .font(Theme.sans(15))
+                Text(upcomingLine(meeting)).font(Theme.sans(15))
                 JoinStartButton(meeting: meeting, prominent: meeting.start <= Date())
                     .padding(.top, 8)
             }
@@ -666,9 +663,7 @@ private struct SidePreview: View {
         VStack(alignment: .leading, spacing: 0) {
             section(first: true) {
                 Text(meeting.displayTitle).font(Theme.sans(18, .semibold))
-                Text([NT.datePill(meeting.startedAt), meeting.duration > 0 ? "\(max(1, Int((meeting.duration / 60).rounded()))) min" : nil]
-                    .compactMap { $0 }.joined(separator: " • "))
-                    .font(Theme.sans(15)).foregroundStyle(NT.neutral500)
+                Text(pastLine(meeting)).font(Theme.sans(15)).foregroundStyle(NT.neutral500)
             }
             let people = (meeting.attendees ?? []) + (meeting.participants ?? [])
             if !people.isEmpty {
@@ -693,6 +688,23 @@ private struct SidePreview: View {
     }
 
     private var divider: some View { Rectangle().fill(Theme.border).frame(height: 1) }
+
+    /// "Today • 10 - 10:30am • in 5 min".
+    private func upcomingLine(_ meeting: UpcomingMeeting) -> String {
+        var parts: [String] = [NT.datePill(meeting.start), NT.timeRange(meeting.start, meeting.end)]
+        if let countdown = NT.countdown(start: meeting.start, end: meeting.end) { parts.append(countdown.text) }
+        return parts.joined(separator: " • ")
+    }
+
+    /// "Yesterday • 32 min".
+    private func pastLine(_ meeting: Meeting) -> String {
+        var parts: [String] = [NT.datePill(meeting.startedAt)]
+        if meeting.duration > 0 {
+            let minutes = max(1, Int((meeting.duration / 60).rounded()))
+            parts.append("\(minutes) min")
+        }
+        return parts.joined(separator: " • ")
+    }
 
     private func section<Content: View>(first: Bool = false, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8, content: content)

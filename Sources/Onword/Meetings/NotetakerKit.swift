@@ -147,9 +147,11 @@ struct Monogram: View {
     }
 
     private var initials: String {
-        let parts = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" })
-        return String((parts.first?.first.map(String.init) ?? "?") + (parts.dropFirst().first?.first.map(String.init) ?? ""))
-            .uppercased()
+        let parts: [Substring] = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" })
+        var result = ""
+        if let first = parts.first?.first { result.append(first) } else { result = "?" }
+        if parts.count > 1, let second = parts[1].first { result.append(second) }
+        return result.uppercased()
     }
 
     private var tint: UInt32 {
