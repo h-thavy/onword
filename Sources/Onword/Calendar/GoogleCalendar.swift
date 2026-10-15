@@ -124,11 +124,15 @@ final class GoogleCalendar: ObservableObject {
             }
             return
         }
-        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+        // Test hook: ONWORD_TEST_DEFAULT_BROWSER=<bundle id> stands in for the default browser.
+        let testBrowser = ProcessInfo.processInfo.environment["ONWORD_TEST_DEFAULT_BROWSER"]
+            .flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+        guard let app = testBrowser ?? NSWorkspace.shared.urlForApplication(toOpen: url) else {
             lastError = "No browser is set up to open the Google sign-in. Copy the link and paste it into a browser."
             return
         }
         openedIn = Self.appName(app)
+        if Self.openInChromium(url, app: app) { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration) { [weak self] _, error in
@@ -151,6 +155,45 @@ final class GoogleCalendar: ObservableObject {
     func cancelSignIn() {
         guard isConnecting else { return }
         finish(error: nil)
+    }
+
+    /// Chrome-based browsers can run several copies at once: tools that drive a browser start hidden
+    /// ("headless") ones, and macOS may hand a link to one of those, where nobody sees it. Starting the
+    /// browser's own program with the link passes it to the copy using your normal profile instead; then the
+    /// visible copy is brought forward. Returns false when that isn't needed (one copy, or not Chrome-based).
+    private static func openInChromium(_ url: URL, app: URL) -> Bool {
+        let chromium: Set<String> = ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary",
+                                     "com.brave.Browser", "com.microsoft.edgemac", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
+                                     "com.vivaldi.Vivaldi", "company.thebrowser.Browser", "org.chromium.Chromium"]
+        guard let bundle = Bundle(url: app), let id = bundle.bundleIdentifier, chromium.contains(id),
+              let executable = bundle.executableURL,
+              NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 else { return false }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = [url.absoluteString]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            for copy in NSRunningApplication.runningApplications(withBundleIdentifier: id)
+            where copy.activationPolicy == .regular && !isHeadless(copy.processIdentifier) {
+                NSApp.yieldActivation(to: copy)   // Onword is active (you clicked Connect), so it can hand over
+                copy.activate()
+            }
+        }
+        return true
+    }
+
+    /// Whether a process was started with --headless (a browser copy driven by a tool, with no visible windows).
+    private static func isHeadless(_ pid: pid_t) -> Bool {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return false }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return false }
+        // argc, then the executable path and the arguments, separated by NULs.
+        let text = String(decoding: buffer.prefix(size).map { $0 == 0 ? 10 : $0 }, as: UTF8.self)
+        return text.split(separator: "\n").contains { $0.hasPrefix("--headless") }
     }
 
     static func appName(_ app: URL) -> String {
