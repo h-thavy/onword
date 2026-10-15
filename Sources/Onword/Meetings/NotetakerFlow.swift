@@ -94,6 +94,45 @@ final class NotetakerFlow {
     /// ONWORD_TEST_ISLAND=reminder|detected|stopping|stopped|mistake|summary|maxlength|mic shows that surface.
     private static var liveTest: LiveTranscriber?
 
+    /// The Google Calendar demo: Settings → Connections → Connect (the consent screen is done in the browser),
+    /// then, once connected, the upcoming meetings, a note started from one, and Disconnect.
+    private func runGoogleDemo() {
+        Task { @MainActor in
+            let google = GoogleCalendar.shared
+            if google.connectedEmail != nil { google.disconnect() }
+            try? await Task.sleep(for: .seconds(3))
+            NSApp.activate(ignoringOtherApps: true)
+            WindowManager.shared.show()
+            HubRouter.shared.settingsTab = .connections
+            try? await Task.sleep(for: .seconds(6))
+            google.connect()
+            while google.connectedEmail == nil { try? await Task.sleep(for: .seconds(1)) }
+            log.notice("Demo: connected")
+            try? await Task.sleep(for: .seconds(2))
+            NSApp.activate(ignoringOtherApps: true)
+            WindowManager.shared.show()
+            try? await Task.sleep(for: .seconds(5))
+            HubRouter.shared.settingsTab = nil
+            HubRouter.shared.page = .notetaker
+            CalendarService.shared.refresh(force: true)
+            try? await Task.sleep(for: .seconds(8))
+            if let meeting = CalendarService.shared.upcoming.first(where: { $0.joinURL != nil }) ?? CalendarService.shared.upcoming.first {
+                log.notice("Demo: starting notes for an upcoming meeting")
+                beginRecording(event: meeting)
+                try? await Task.sleep(for: .seconds(10))
+                MeetingRecorder.shared.stop()
+                try? await Task.sleep(for: .seconds(4))
+            }
+            NotepadWindow.shared.close()
+            NSApp.activate(ignoringOtherApps: true)
+            WindowManager.shared.show()
+            HubRouter.shared.settingsTab = .connections
+            try? await Task.sleep(for: .seconds(4))
+            google.disconnect()
+            log.notice("Demo: disconnected")
+        }
+    }
+
     private func runLiveTest(_ folder: URL) {
         let mic = (try? AudioFileWriter.read(folder.appending(path: "mic.wav"))) ?? []
         let system = (try? AudioFileWriter.read(folder.appending(path: "system.wav"))) ?? []
@@ -153,6 +192,8 @@ final class NotetakerFlow {
         // ONWORD_TEST_LIVE=<folder with mic.wav, system.wav> streams them through the live transcript at 4× speed
         // and writes what it shows to <folder>/live.txt.
         if let folder = env["ONWORD_TEST_LIVE"] { runLiveTest(URL(fileURLWithPath: folder)) }
+        // ONWORD_DEMO_GOOGLE=1 walks through the Google Calendar flow for the verification video.
+        if env["ONWORD_DEMO_GOOGLE"] != nil { runGoogleDemo() }
         // ONWORD_TEST_RECORD=<seconds> records a meeting for that long, starting 3 s after launch.
         if let seconds = env["ONWORD_TEST_RECORD"].flatMap(Double.init) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

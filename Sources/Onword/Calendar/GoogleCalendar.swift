@@ -82,7 +82,22 @@ final class GoogleCalendar: ObservableObject {
                         // Always show Google's account chooser (with "Use another account"), then the consent screen.
                         .init(name: "prompt", value: "select_account consent"),
                     ]
-                    NSWorkspace.shared.open(components.url!)
+                    // Test hooks for demo recordings: ONWORD_OAUTH_CHROME_PROFILE=<profile folder> opens the sign-in
+                    // in that Chrome profile; ONWORD_OAUTH_BROWSER=<bundle id> in that browser.
+                    if let profile = ProcessInfo.processInfo.environment["ONWORD_OAUTH_CHROME_PROFILE"] {
+                        let chrome = Process()
+                        chrome.executableURL = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+                        chrome.arguments = ["--profile-directory=\(profile)", components.url!.absoluteString]
+                        try? chrome.run()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                            NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").first?.activate()
+                        }
+                    } else if let browser = ProcessInfo.processInfo.environment["ONWORD_OAUTH_BROWSER"],
+                       let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser) {
+                        NSWorkspace.shared.open([components.url!], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                    } else {
+                        NSWorkspace.shared.open(components.url!)
+                    }
                     self.log.notice("Opened Google sign-in in the browser (redirect port \(port))")
                 }
             }
