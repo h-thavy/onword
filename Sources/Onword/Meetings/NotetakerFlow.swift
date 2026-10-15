@@ -201,6 +201,14 @@ final class NotetakerFlow {
                 DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MeetingRecorder.shared.stop() }
             }
         }
+        // ONWORD_TEST_RESUME_LAST=<seconds> resumes the latest meeting for that long, 3 s after launch.
+        if let seconds = env["ONWORD_TEST_RESUME_LAST"].flatMap(Double.init),
+           let last = MeetingStore.shared.meetings.max(by: { $0.startedAt < $1.startedAt }) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                _ = MeetingRecorder.shared.start(into: last.id)
+                DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MeetingRecorder.shared.stop() }
+            }
+        }
         // ONWORD_TEST_REPROCESS=1 transcribes every meeting again (e.g. from recording.m4a).
         if env["ONWORD_TEST_REPROCESS"] != nil {
             for meeting in MeetingStore.shared.meetings where meeting.status == .ready { MeetingRecorder.shared.process(meeting.id) }

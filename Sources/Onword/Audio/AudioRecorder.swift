@@ -34,6 +34,9 @@ final class AudioRecorder {
 
     /// Also called (on the audio thread) with every converted chunk, e.g. to stream a meeting to disk.
     var onSamples: (([Float]) -> Void)?
+    /// When set, also called with the same audio at 48 kHz (and the same silences), for the meeting
+    /// recording you listen to.
+    var onHighQuality: (([Float]) -> Void)?
     /// Keep everything in memory for `stop()`. Meetings turn this off and write to disk instead.
     var keepsSamples = true
     /// The microphone chosen in Settings (Core Audio UID or Auto-detect), or nil for the default.
@@ -185,12 +188,19 @@ final class AudioRecorder {
     /// sample rate mid-stream doesn't break conversion.
     private func installTap(on input: AVAudioInputNode) {
         var resampler: Resampler?
+        var listening: Resampler?
         input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
             if resampler == nil || resampler?.inputFormat != buffer.format {
                 resampler = Resampler(from: buffer.format)
+                listening = nil
             }
             guard let self, let resampler else { return }
-            self.append(resampler.convert(buffer))
+            var high: [Float]?
+            if self.onHighQuality != nil {
+                if listening == nil { listening = Resampler(from: buffer.format, to: HighQualityWriter.sampleRate) }
+                high = listening?.convert(buffer)
+            }
+            self.append(resampler.convert(buffer), high: high)
         }
     }
 
@@ -303,7 +313,7 @@ final class AudioRecorder {
 
     // MARK: - Samples (audio thread)
 
-    private func append(_ chunk: [Float]) {
+    private func append(_ chunk: [Float], high: [Float]? = nil) {
         guard !chunk.isEmpty else { return }
         // Fill any gap (device switch, engine restart) with silence so the timeline stays true.
         let gap: Int = lock.withLock {
@@ -313,10 +323,12 @@ final class AudioRecorder {
         if gap > Int(0.3 * Self.sampleRate) {
             let silence = [Float](repeating: 0, count: min(gap, Int(30 * Self.sampleRate)))
             deliver(silence)
+            onHighQuality?([Float](repeating: 0, count: silence.count * Int(HighQualityWriter.sampleRate / Self.sampleRate)))
             log.notice("Filled a \(String(format: "%.1f", Double(silence.count) / Self.sampleRate), privacy: .public) s gap with silence")
         }
         if Resampler.rms(chunk) > Self.deadFloor { lock.withLock { lastSoundAt = Date() } }
         deliver(chunk)
+        if let high { onHighQuality?(high) }
     }
 
     private func deliver(_ chunk: [Float]) {

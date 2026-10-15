@@ -26,6 +26,9 @@ final class MeetingRecorder: ObservableObject {
     private var system: AnyObject?   // SystemAudioCapture on macOS 14.2+
     private var micWriter: AudioFileWriter?
     private var systemWriter: AudioFileWriter?
+    /// The listening-quality copies (48 kHz AAC) of the two tracks.
+    private var micHQWriter: HighQualityWriter?
+    private var systemHQWriter: HighQualityWriter?
     private let levels = LevelBox()
     private var startedAt = Date()
     private var timer: Timer?
@@ -77,6 +80,8 @@ final class MeetingRecorder: ObservableObject {
         try? FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
         let micURL = resumingDuration == nil ? meeting.micURL : meeting.partURL(meeting.micURL)
         let systemURL = resumingDuration == nil ? meeting.systemURL : meeting.partURL(meeting.systemURL)
+        let micHQURL = resumingDuration == nil ? meeting.micHQURL : meeting.partURL(meeting.micHQURL)
+        let systemHQURL = resumingDuration == nil ? meeting.systemHQURL : meeting.partURL(meeting.systemHQURL)
         lastMicSound = Date()
         let live = LiveTranscriber()
         self.live = live
@@ -86,6 +91,9 @@ final class MeetingRecorder: ObservableObject {
         do {
             let writer = try AudioFileWriter(url: micURL)
             micWriter = writer
+            let high = try? HighQualityWriter(url: micHQURL)
+            micHQWriter = high
+            mic.onHighQuality = high.map { writer in { writer.append($0) } }
             let levels = levels
             mic.onSamples = { samples in
                 writer.append(samples)
@@ -105,6 +113,9 @@ final class MeetingRecorder: ObservableObject {
             do {
                 let writer = try AudioFileWriter(url: systemURL)
                 let capture = SystemAudioCapture()
+                let high = try? HighQualityWriter(url: systemHQURL)
+                systemHQWriter = high
+                capture.onHighQuality = high.map { writer in { writer.append($0) } }
                 let levels = levels
                 capture.onSamples = { samples in
                     writer.append(samples)
@@ -165,8 +176,11 @@ final class MeetingRecorder: ObservableObject {
         mic.onSamples = nil
         if #available(macOS 14.2, *) { (system as? SystemAudioCapture)?.stop() }
         system = nil
+        mic.onHighQuality = nil
         micWriter = nil      // closes the files
         systemWriter = nil
+        micHQWriter = nil
+        systemHQWriter = nil
         let participants = speakerPoller?.stop() ?? []
         speakerPoller = nil
         live?.stop()
@@ -179,6 +193,8 @@ final class MeetingRecorder: ObservableObject {
         if resumingDuration != nil, let meeting = MeetingStore.shared.meeting(id) {
             Self.appendPart(meeting.partURL(meeting.micURL), to: meeting.micURL)
             Self.appendPart(meeting.partURL(meeting.systemURL), to: meeting.systemURL)
+            MeetingAudio.appendListeningPart(meeting.partURL(meeting.micHQURL), to: meeting.micHQURL)
+            MeetingAudio.appendListeningPart(meeting.partURL(meeting.systemHQURL), to: meeting.systemHQURL)
         }
         resumingDuration = nil
         let liveWords = liveSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }

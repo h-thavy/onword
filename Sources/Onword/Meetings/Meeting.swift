@@ -48,6 +48,9 @@ struct Meeting: Codable, Identifiable, Equatable {
     var folder: URL { AppPaths.meetings.appendingPathComponent(id.uuidString, isDirectory: true) }
     var micURL: URL { folder.appendingPathComponent("mic.caf") }
     var systemURL: URL { folder.appendingPathComponent("system.caf") }
+    /// The same two tracks at listening quality (48 kHz AAC), while recording; they become recording.m4a.
+    var micHQURL: URL { folder.appendingPathComponent("mic-hq.caf") }
+    var systemHQURL: URL { folder.appendingPathComponent("system-hq.caf") }
     /// Active-speaker observations from the call app (JSON lines of `SpeakerObservation`).
     var speakersURL: URL { folder.appendingPathComponent("speakers.jsonl") }
 

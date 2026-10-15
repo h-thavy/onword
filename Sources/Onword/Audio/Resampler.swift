@@ -1,6 +1,7 @@
 import AVFoundation
 
-/// Converts live audio buffers of any format to 16 kHz mono Float32 (what Whisper and SpeakerKit expect).
+/// Converts live audio buffers of any format to mono Float32: 16 kHz by default (what Whisper and SpeakerKit
+/// expect), or another rate (48 kHz for the meeting recording you listen to).
 final class Resampler {
     static let sampleRate: Double = 16_000
     static let targetFormat = AVAudioFormat(
@@ -8,18 +9,22 @@ final class Resampler {
 
     private let converter: AVAudioConverter
     let inputFormat: AVAudioFormat
+    let outputFormat: AVAudioFormat
 
-    init?(from inputFormat: AVAudioFormat) {
-        guard let converter = AVAudioConverter(from: inputFormat, to: Self.targetFormat) else { return nil }
+    init?(from inputFormat: AVAudioFormat, to rate: Double = Resampler.sampleRate) {
+        guard let output = rate == Self.sampleRate ? Self.targetFormat
+                : AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false),
+              let converter = AVAudioConverter(from: inputFormat, to: output) else { return nil }
         converter.downmix = true
         self.converter = converter
         self.inputFormat = inputFormat
+        outputFormat = output
     }
 
     func convert(_ buffer: AVAudioPCMBuffer) -> [Float] {
-        let ratio = Self.sampleRate / buffer.format.sampleRate
+        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
-        guard let output = AVAudioPCMBuffer(pcmFormat: Self.targetFormat, frameCapacity: capacity) else { return [] }
+        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return [] }
 
         var fed = false
         var error: NSError?
@@ -77,5 +82,29 @@ final class AudioFileWriter {
             return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
         }
         return Resampler(from: file.processingFormat)?.convert(buffer) ?? []
+    }
+}
+
+/// Writes a meeting track at listening quality, 48 kHz mono AAC, as the audio arrives. The 16 kHz tracks are
+/// what transcription uses; these become the recording you play back (the call as clear as you heard it).
+final class HighQualityWriter {
+    static let sampleRate: Double = 48_000
+    static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
+    private let file: AVAudioFile
+    private let lock = NSLock()
+
+    init(url: URL) throws {
+        file = try AVAudioFile(forWriting: url, settings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: Self.sampleRate,
+            AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 96_000,
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
+    }
+
+    func append(_ samples: [Float]) {
+        guard !samples.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(samples.count)) else { return }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        lock.withLock { try? file.write(from: buffer) }
     }
 }

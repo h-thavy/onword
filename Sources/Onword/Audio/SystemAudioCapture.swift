@@ -21,12 +21,16 @@ final class SystemAudioCapture {
 
     /// Called on a background queue with 16 kHz mono samples.
     var onSamples: (([Float]) -> Void)?
+    /// When set, also called with the same audio at 48 kHz (and the same silences), for the meeting
+    /// recording you listen to.
+    var onHighQuality: (([Float]) -> Void)?
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var tapFormat: AVAudioFormat?
     private var resampler: Resampler?
+    private var listening: Resampler?
     private let queue = DispatchQueue(label: "com.onword.system-audio", qos: .userInitiated)
     private var startedAt = Date()
     private var sampleCount = 0
@@ -58,6 +62,7 @@ final class SystemAudioCapture {
               let resampler = Resampler(from: format) else { throw CaptureError.unsupportedFormat }
         tapFormat = format
         self.resampler = resampler
+        listening = Resampler(from: format, to: HighQualityWriter.sampleRate)
 
         // 2. A private aggregate device that exposes the tap as an input we can read.
         let outputUID = try Self.defaultOutputDeviceUID()
@@ -102,6 +107,7 @@ final class SystemAudioCapture {
             else { return }
             self.checkRate(frames: Int(buffer.frameLength))
             let samples = resampler.convert(buffer)
+            let high = self.onHighQuality != nil ? self.listening?.convert(buffer) : nil
             guard !samples.isEmpty else { return }
             // Keep this track on the same clock as the mic: pad late starts and dropouts with silence.
             let gap = Int(Date().timeIntervalSince(self.startedAt) * Resampler.sampleRate) - self.sampleCount - samples.count
@@ -109,9 +115,11 @@ final class SystemAudioCapture {
                 let silence = [Float](repeating: 0, count: min(gap, Int(30 * Resampler.sampleRate)))
                 self.sampleCount += silence.count
                 self.onSamples?(silence)
+                self.onHighQuality?([Float](repeating: 0, count: silence.count * Int(HighQualityWriter.sampleRate / Resampler.sampleRate)))
             }
             self.sampleCount += samples.count
             self.onSamples?(samples)
+            if let high { self.onHighQuality?(high) }
         })
         startedAt = Date()
         sampleCount = 0
@@ -160,6 +168,7 @@ final class SystemAudioCapture {
               let resampler = Resampler(from: format) else { return }
         tapFormat = format
         self.resampler = resampler
+        listening = Resampler(from: format, to: HighQualityWriter.sampleRate)
         rateCheckStart = nil
         rateCheckFrames = 0
         suspectedRate = nil
