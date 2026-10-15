@@ -91,7 +91,17 @@ actor MeetingProcessor {
             await progress("Transcribing the other speakers…")
             let others = withoutHallucinations(try await transcribeTrack(system, language: systemLanguage, progress: progress), seconds: Double(system.count) / 16_000)
             await progress("Identifying speakers…")
-            let tagged = try await diarize(system, transcription: others)
+            var tagged = try await diarize(system, transcription: others)
+            if micHasSpeech {
+                // Your own voice coming back through the call (the call also open on a device near you).
+                let returned = DelayedCopyDetector(mic: mic, system: system)
+                let before = tagged.count
+                if ProcessInfo.processInfo.environment["ONWORD_DEBUG_COPY"] != nil {
+                    for t in tagged { log.notice("Copy score \(returned.score(start: t.start, end: t.end), format: .fixed(precision: 2)) at \(t.start, format: .fixed(precision: 1))–\(t.end, format: .fixed(precision: 1)): \(t.text.prefix(40), privacy: .public)") }
+                }
+                tagged = tagged.filter { !returned.isCopyOfMic(start: $0.start, end: $0.end) }
+                if tagged.count < before { log.notice("Call: \(before - tagged.count) segment(s) dropped as your own voice coming back") }
+            }
 
             var mine: [TranscriptSegment] = []
             if micHasSpeech {

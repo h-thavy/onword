@@ -132,6 +132,33 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(long.map(\.count).reduce(0, +), long.last!.upperBound - long.first!.lowerBound)
     }
 
+    func testDelayedCopyOfYourVoiceIsDetected() {
+        // "Speech": noise bursts with a changing spectrum, from a fixed seed.
+        var seed: UInt64 = 42
+        func random() -> Float { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Float(seed >> 40) / Float(1 << 24) * 2 - 1 }
+        func speech(_ seconds: Double, syllables: [Float] = [0.2, 0.6, 0.9, 0.4, 0.75], length: Int = 2400) -> [Float] {
+            var out: [Float] = [], last: Float = 0
+            for i in 0..<Int(seconds * 16_000) {
+                let syllable = i / length
+                let smooth = syllables[syllable % syllables.count]
+                last = smooth * last + (1 - smooth) * random()
+                out.append(last * (syllable % 3 == 2 ? 0.05 : 0.5))
+            }
+            return out
+        }
+        let silence = [Float](repeating: 0, count: 16_000)
+        let you = speech(3)
+        let mic = silence + you + silence + silence + silence
+        func track(_ voice: [Float]) -> [Float] {
+            let start = [Float](repeating: 0, count: 40_000) + voice   // 2.5 s in
+            return start + [Float](repeating: 0, count: mic.count - start.count)
+        }
+        // The call plays you back 1.5 s later, quieter.
+        XCTAssertTrue(DelayedCopyDetector(mic: mic, system: track(you.map { $0 * 0.4 })).isCopyOfMic(start: 2.5, end: 5.5))
+        // Someone else talking is not a copy.
+        XCTAssertFalse(DelayedCopyDetector(mic: mic, system: track(speech(3, syllables: [0.85, 0.3, 0.7, 0.1], length: 3100))).isCopyOfMic(start: 2.5, end: 5.5))
+    }
+
     func testDropsVideoOutrosAtAnyLength() {
         let segments = [seg(0, 4, "s1", "金曜日までに共有してください。"), seg(60, 66, "s1", "ご視聴ありがとうございました"),
                         seg(70, 75, "me", "Please stay tuned until the next video is uploaded."), seg(80, 86, "me", "Don't forget to like and subscribe!")]

@@ -27,8 +27,9 @@ enum MeetingAudio {
         let fm = FileManager.default
         guard fm.fileExists(atPath: meeting.micURL.path) || fm.fileExists(atPath: meeting.systemURL.path) else { return false }
         let mic = (try? AudioFileWriter.read(meeting.micURL)) ?? []
-        let system = (try? AudioFileWriter.read(meeting.systemURL)) ?? []
+        var system = (try? AudioFileWriter.read(meeting.systemURL)) ?? []
         guard !mic.isEmpty || !system.isEmpty else { return false }
+        silenceReturnedVoice(mic: mic, system: &system)
         let url = recordingURL(meeting)
         let temp = url.deletingLastPathComponent().appendingPathComponent("recording-writing.m4a")
         try? fm.removeItem(at: temp)
@@ -49,6 +50,30 @@ enum MeetingAudio {
             log.error("Couldn't compress meeting audio: \(error.localizedDescription, privacy: .public)")
             return false
         }
+    }
+
+    /// Mutes the call channel where it's your own voice coming back a moment later (the call also open on a
+    /// device near you), so the recording doesn't have you twice.
+    private static func silenceReturnedVoice(mic: [Float], system: inout [Float]) {
+        guard !mic.isEmpty, !system.isEmpty else { return }
+        let detector = DelayedCopyDetector(mic: mic, system: system)
+        let fade = Int(sampleRate * 0.01)
+        var muted = 0.0
+        if ProcessInfo.processInfo.environment["ONWORD_DEBUG_COPY"] != nil {
+            for span in SpeechSpans.find(system) {
+                let a = Double(span.lowerBound) / sampleRate, b = Double(span.upperBound) / sampleRate
+                log.notice("Span copy score \(detector.score(start: a, end: b), format: .fixed(precision: 2)) harmonic \(detector.harmonicScore(start: a, end: b), format: .fixed(precision: 2)) at \(a, format: .fixed(precision: 1))–\(b, format: .fixed(precision: 1))")
+            }
+        }
+        for span in SpeechSpans.find(system) where detector.isCopyOfMic(start: Double(span.lowerBound) / sampleRate,
+                                                                        end: Double(span.upperBound) / sampleRate) {
+            for i in span {
+                let edge = min(i - span.lowerBound, span.upperBound - 1 - i)
+                system[i] *= edge < fade ? 1 - Float(edge) / Float(fade) : 0
+            }
+            muted += Double(span.count) / sampleRate
+        }
+        if muted > 0 { log.notice("Muted \(muted, format: .fixed(precision: 1)) s of your own voice coming back through the call") }
     }
 
     /// Puts the raw tracks back from recording.m4a (before resuming a finished meeting).
