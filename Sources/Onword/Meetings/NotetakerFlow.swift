@@ -153,6 +153,13 @@ final class NotetakerFlow {
         // ONWORD_TEST_LIVE=<folder with mic.wav, system.wav> streams them through the live transcript at 4× speed
         // and writes what it shows to <folder>/live.txt.
         if let folder = env["ONWORD_TEST_LIVE"] { runLiveTest(URL(fileURLWithPath: folder)) }
+        // ONWORD_TEST_RECORD=<seconds> records a meeting for that long, starting 3 s after launch.
+        if let seconds = env["ONWORD_TEST_RECORD"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                _ = MeetingRecorder.shared.start(title: "Recording test")
+                DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MeetingRecorder.shared.stop() }
+            }
+        }
         // ONWORD_TEST_REPROCESS=1 transcribes every meeting again (e.g. from recording.m4a).
         if env["ONWORD_TEST_REPROCESS"] != nil {
             for meeting in MeetingStore.shared.meetings where meeting.status == .ready { MeetingRecorder.shared.process(meeting.id) }
@@ -347,7 +354,8 @@ final class NotetakerFlow {
 
     /// The call ended: "Notetaker stopping" counts down 10 s (paused while hovered), then stops.
     func callEnded() {
-        guard MeetingRecorder.shared.isRecording, NotetakerSettings.stopWhenCallEnds, !stoppingCountdown else { return }
+        guard MeetingRecorder.shared.isRecording, NotetakerSettings.stopWhenCallEnds, !stoppingCountdown,
+              ProcessInfo.processInfo.environment["ONWORD_TEST_RECORD"] == nil else { return }
         stoppingCountdown = true
         FlowBarIsland.shared.show(.init(
             title: "Notetaker stopping", kind: .condensed,

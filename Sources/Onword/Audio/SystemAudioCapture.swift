@@ -30,6 +30,12 @@ final class SystemAudioCapture {
     private let queue = DispatchQueue(label: "com.onword.system-audio", qos: .userInitiated)
     private var startedAt = Date()
     private var sampleCount = 0
+    /// Frames received since `rateCheckStart`, to catch audio arriving at a different rate than assumed.
+    private var rateCheckStart: Date?
+    private var rateCheckFrames = 0
+    /// A rate measured once; switched to only if the next measurement agrees.
+    private var suspectedRate: Double?
+    private var rateListener: AudioObjectPropertyListenerBlock?
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "system-audio")
 
     func start() throws {
@@ -70,12 +76,31 @@ final class SystemAudioCapture {
         ]
         try check("create aggregate device", AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID))
 
+        // The tap reports the output's usual rate, but the audio arrives at the device's current rate, which
+        // differs when e.g. a Bluetooth headset is in call mode (24 or 16 kHz). Reading 24 kHz audio as 48 kHz
+        // made the other people sound twice as fast. Use the device's rate, and follow it when it changes.
+        if let rate = Self.nominalRate(aggregateID), rate != format.sampleRate {
+            log.notice("System audio arrives at \(rate) Hz, not the tap's \(format.sampleRate) Hz")
+            useRate(rate)
+        }
+        var rateAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, let rate = Self.nominalRate(self.aggregateID), rate != self.tapFormat?.sampleRate else { return }
+            self.log.notice("System audio rate changed to \(rate) Hz")
+            self.useRate(rate)
+        }
+        rateListener = listener
+        AudioObjectAddPropertyListenerBlock(aggregateID, &rateAddress, queue, listener)
+
         // 3. Read buffers as they arrive.
         try check("create IO proc", AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) {
             [weak self] _, inputData, _, _, _ in
             guard let self, let format = self.tapFormat, let resampler = self.resampler,
                   let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil)
             else { return }
+            self.checkRate(frames: Int(buffer.frameLength))
             let samples = resampler.convert(buffer)
             guard !samples.isEmpty else { return }
             // Keep this track on the same clock as the mic: pad late starts and dropouts with silence.
@@ -90,11 +115,20 @@ final class SystemAudioCapture {
         })
         startedAt = Date()
         sampleCount = 0
+        rateCheckStart = nil
+        rateCheckFrames = 0
         try check("start device", AudioDeviceStart(aggregateID, ioProcID))
-        log.notice("System audio capture started (\(format.sampleRate) Hz)")
+        log.notice("System audio capture started (\(self.tapFormat?.sampleRate ?? format.sampleRate) Hz)")
     }
 
     func stop() {
+        if aggregateID != kAudioObjectUnknown, let rateListener {
+            var rateAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            AudioObjectRemovePropertyListenerBlock(aggregateID, &rateAddress, queue, rateListener)
+            self.rateListener = nil
+        }
         if aggregateID != kAudioObjectUnknown {
             AudioDeviceStop(aggregateID, ioProcID)
             if let ioProcID { AudioDeviceDestroyIOProcID(aggregateID, ioProcID) }
@@ -114,6 +148,60 @@ final class SystemAudioCapture {
             stop()
             throw CaptureError.coreAudio(step, status)
         }
+    }
+
+    // MARK: - Sample rate
+
+    /// Reads the tap's buffers at `rate` from now on (same channels and layout).
+    private func useRate(_ rate: Double) {
+        guard let current = tapFormat, rate > 0,
+              let format = AVAudioFormat(commonFormat: current.commonFormat, sampleRate: rate,
+                                         channels: current.channelCount, interleaved: current.isInterleaved),
+              let resampler = Resampler(from: format) else { return }
+        tapFormat = format
+        self.resampler = resampler
+        rateCheckStart = nil
+        rateCheckFrames = 0
+        suspectedRate = nil
+    }
+
+    /// Safety net: every few seconds, compares how many frames arrived with the assumed rate. The device
+    /// clock runs even in silence, so this measures the real rate; a big difference switches to the nearest
+    /// standard rate.
+    private func checkRate(frames: Int) {
+        // Measured from the end of the first buffer, so the start-up delay doesn't count.
+        guard let start = rateCheckStart else {
+            rateCheckStart = Date()
+            rateCheckFrames = 0
+            return
+        }
+        rateCheckFrames += frames
+        let elapsed = Date().timeIntervalSince(start)
+        guard elapsed >= 3, let assumed = tapFormat?.sampleRate else { return }
+        let measured = Double(rateCheckFrames) / elapsed
+        rateCheckStart = Date()
+        rateCheckFrames = 0
+        guard abs(measured - assumed) / assumed > 0.15,
+              let nearest = Self.standardRates.min(by: { abs($0 - measured) < abs($1 - measured) }) else {
+            suspectedRate = nil
+            return
+        }
+        // Two measurements in a row must agree.
+        guard suspectedRate == nearest else { suspectedRate = nearest; return }
+        log.notice("System audio arriving at about \(Int(measured)) Hz, not \(assumed) Hz; reading it as \(nearest) Hz")
+        useRate(nearest)
+    }
+
+    static let standardRates: [Double] = [8_000, 11_025, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 88_200, 96_000]
+
+    static func nominalRate(_ device: AudioObjectID) -> Double? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &rate)
+        return status == noErr && rate > 0 ? rate : nil
     }
 
     // MARK: - Core Audio lookups
