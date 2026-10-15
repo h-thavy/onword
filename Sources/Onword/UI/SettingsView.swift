@@ -368,8 +368,12 @@ struct SettingsView: View {
                     if google.isConnected {
                         Button("Disconnect") { google.disconnect() }.buttonStyle(SecondaryButtonStyle())
                     } else {
-                        Button(google.isConnecting ? "Waiting…" : "Connect") { google.connect() }
-                            .buttonStyle(SecondaryButtonStyle()).disabled(!google.isConfigured || google.isConnecting)
+                        if google.isConnecting {
+                            GoogleSignInWaiting(google: google)
+                        } else {
+                            Button("Connect") { google.connect() }
+                                .buttonStyle(SecondaryButtonStyle()).disabled(!google.isConfigured)
+                        }
                     }
                 }
                 SettingsLine("Mac Calendar", google.isConnected ? "Not used while Google Calendar is connected." : calendarStatus, last: true) {
@@ -412,6 +416,10 @@ struct SettingsView: View {
 
     private var googleStatus: String {
         if let email = google.connectedEmail { return "Connected as \(email). Read-only; upcoming meetings appear in Notetaker." }
+        if google.isConnecting {
+            let browser = google.openedIn.map { " in \($0)" } ?? ""
+            return "Sign in to Google\(browser) to finish. Don't see it? It may be on another screen: Open again. Is your Google account in a different browser? Copy the link and paste it there."
+        }
         if !google.isConfigured { return "Not available in this build. Add your Google account under Internet Accounts and use Mac Calendar below — it shows the same meetings." }
         if let error = google.lastError { return error }
         return "See upcoming meetings, join in one click, and name notes after the event."
@@ -559,6 +567,32 @@ extension Transcriber.Model {
         case .base: "Base"
         case .small: "Small"
         case .khmer: "Khmer"
+        }
+    }
+}
+
+/// While Google sign-in waits: copy the sign-in link (for a browser other than the default, where your
+/// account is), open it again in the default browser (it can open out of sight), or cancel.
+private struct GoogleSignInWaiting: View {
+    @ObservedObject var google: GoogleCalendar
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Button {
+                google.copySignInLink()
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+            } label: {
+                Label(copied ? "Copied" : "Copy link", systemImage: copied ? "checkmark" : "link")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            HStack(spacing: 14) {
+                Button("Open again") { google.openSignIn() }
+                Button("Cancel") { google.cancelSignIn() }
+            }
+            .buttonStyle(.plainPointer)
+            .font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkMuted)
         }
     }
 }

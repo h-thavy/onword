@@ -87,6 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { WindowManager.shared.toggleSidebar(nil) }
                 }
             }
+            if ProcessInfo.processInfo.environment["ONWORD_TEST_CONNECT"] != nil {   // test hook: start Google sign-in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { GoogleCalendar.shared.connect() }
+            }
             if let page = ProcessInfo.processInfo.environment["ONWORD_TEST_SETTINGS"] {   // test hook
                 WindowManager.shared.show()
                 HubRouter.shared.settingsTab = ["languages", "microphone"].contains(page) ? .general : HubRouter.SettingsTab(rawValue: page) ?? .general

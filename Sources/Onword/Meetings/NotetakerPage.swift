@@ -352,12 +352,20 @@ private struct TodayCard: View {
                 Text("Add calendar for accurate speaker names and richer summaries on all meetings")
                     .font(Theme.sans(15)).foregroundStyle(Theme.inkTertiary).multilineTextAlignment(.center)
                 Button {
-                    if google.isConfigured { google.connect() } else { calendar.requestAccess() }
+                    if google.isConnecting { google.openSignIn() } else if google.isConfigured { google.connect() } else { calendar.requestAccess() }
                 } label: {
-                    Text(google.isConnecting ? "Waiting for Google…" : "Connect calendar")
+                    Text(google.isConnecting ? "Open Google sign-in again" : "Connect calendar")
                 }
                 .buttonStyle(.pill).controlSize(.small).padding(.top, 8)
-                .disabled(google.isConnecting)
+                if google.isConnecting {
+                    Text("Waiting for Google\(google.openedIn.map { " in \($0)" } ?? ""). It may be on another screen. Account in another browser? Copy the link and paste it there.")
+                        .font(Theme.sans(13)).foregroundStyle(Theme.inkTertiary).multilineTextAlignment(.center)
+                    HStack(spacing: 12) {
+                        Button("Copy link") { google.copySignInLink() }
+                        Button("Cancel") { google.cancelSignIn() }
+                    }
+                    .buttonStyle(.plain).font(Theme.sans(13, .medium)).foregroundStyle(Theme.inkMuted)
+                }
                 if google.isConfigured {
                     Button("Use Mac Calendar instead") { calendar.requestAccess() }
                         .buttonStyle(.plainPointer).font(Theme.sans(12)).foregroundStyle(Theme.inkTertiary)

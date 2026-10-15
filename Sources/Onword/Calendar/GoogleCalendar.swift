@@ -19,6 +19,11 @@ final class GoogleCalendar: ObservableObject {
     @Published private(set) var connectedEmail: String?
     @Published private(set) var isConnecting = false
     @Published private(set) var lastError: String?
+    /// While signing in: the Google page, and the browser it opened in. With two screens or several browser
+    /// windows it can open out of sight, and your account may be in another browser, so it can be opened
+    /// again, or copied to paste into the browser that has your account.
+    @Published private(set) var signInURL: URL?
+    @Published private(set) var openedIn: String?
 
     var isConfigured: Bool { config != nil }
     var isConnected: Bool { connectedEmail != nil }
@@ -40,6 +45,8 @@ final class GoogleCalendar: ObservableObject {
     private var accessToken: String?
     private var accessTokenExpiry = Date.distantPast
     private var listener: NWListener?
+    /// Counts sign-in attempts, so an older attempt's timeout doesn't end a newer one.
+    private var attempt = 0
     private let log = Logger(subsystem: "io.github.h-thavy.onword", category: "google")
 
     private init() {
@@ -51,9 +58,13 @@ final class GoogleCalendar: ObservableObject {
 
     // MARK: - Sign in
 
+    /// Starts Google sign-in in the default browser. Clicking Connect while a sign-in is waiting starts it again.
     func connect() {
-        guard let config, !isConnecting else { return }
+        guard let config else { return }
+        if isConnecting { stopListening() }
         isConnecting = true
+        attempt += 1
+        let thisAttempt = attempt
         lastError = nil
         let verifier = Self.randomURLSafe(64)
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded
@@ -82,34 +93,73 @@ final class GoogleCalendar: ObservableObject {
                         // Always show Google's account chooser (with "Use another account"), then the consent screen.
                         .init(name: "prompt", value: "select_account consent"),
                     ]
-                    // Test hooks for demo recordings: ONWORD_OAUTH_CHROME_PROFILE=<profile folder> opens the sign-in
-                    // in that Chrome profile; ONWORD_OAUTH_BROWSER=<bundle id> in that browser.
-                    if let profile = ProcessInfo.processInfo.environment["ONWORD_OAUTH_CHROME_PROFILE"] {
-                        let chrome = Process()
-                        chrome.executableURL = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-                        chrome.arguments = ["--profile-directory=\(profile)", components.url!.absoluteString]
-                        try? chrome.run()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                            NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").first?.activate()
-                        }
-                    } else if let browser = ProcessInfo.processInfo.environment["ONWORD_OAUTH_BROWSER"],
-                       let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser) {
-                        NSWorkspace.shared.open([components.url!], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-                    } else {
-                        NSWorkspace.shared.open(components.url!)
-                    }
+                    self.signInURL = components.url
+                    self.openSignIn()
                     self.log.notice("Opened Google sign-in in the browser (redirect port \(port))")
                 }
             }
             listener.start(queue: .main)
             // Give up if the browser sign-in is abandoned.
             DispatchQueue.main.asyncAfter(deadline: .now() + 600) { [weak self] in
-                guard let self, self.isConnecting else { return }
+                guard let self, self.isConnecting, self.attempt == thisAttempt else { return }
                 self.finish(error: "Sign-in timed out. Try Connect again.")
             }
         } catch {
             finish(error: "Couldn't start sign-in: \(error.localizedDescription)")
         }
+    }
+
+    /// Opens the waiting sign-in page (again) in the default browser and brings it forward.
+    func openSignIn() {
+        guard let url = signInURL else { return }
+        // Test hook for demo recordings: ONWORD_OAUTH_CHROME_PROFILE=<profile folder> opens it in that Chrome profile.
+        if let profile = ProcessInfo.processInfo.environment["ONWORD_OAUTH_CHROME_PROFILE"] {
+            let chrome = Process()
+            chrome.executableURL = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+            chrome.arguments = ["--profile-directory=\(profile)", url.absoluteString]
+            try? chrome.run()
+            openedIn = "Google Chrome"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").first?.activate()
+            }
+            return
+        }
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+            lastError = "No browser is set up to open the Google sign-in. Copy the link and paste it into a browser."
+            return
+        }
+        openedIn = Self.appName(app)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self?.log.error("Couldn't open the sign-in in \(app.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                self?.lastError = "Couldn't open \(Self.appName(app)). Copy the link and paste it into a browser."
+            }
+        }
+    }
+
+    /// Puts the sign-in link on the clipboard, to paste into any browser or browser profile.
+    func copySignInLink() {
+        guard let url = signInURL else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+
+    /// Stops waiting for the browser.
+    func cancelSignIn() {
+        guard isConnecting else { return }
+        finish(error: nil)
+    }
+
+    static func appName(_ app: URL) -> String {
+        FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func stopListening() {
+        listener?.cancel()
+        listener = nil
     }
 
     func disconnect() {
@@ -183,8 +233,9 @@ final class GoogleCalendar: ObservableObject {
     private func finish(error: String?) {
         isConnecting = false
         lastError = error
-        listener?.cancel()
-        listener = nil
+        signInURL = nil
+        openedIn = nil
+        stopListening()
         if let error { log.error("Google sign-in failed: \(error, privacy: .public)") }
         NSApp.activate(ignoringOtherApps: true)
     }
