@@ -10,12 +10,19 @@ enum CallMute {
         AXUIElementSetMessagingTimeout(app, 0.25)
         // Chrome-based browsers expose their pages to accessibility only when asked.
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        var windows: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows) == .success,
-              let list = windows as? [AXUIElement] else { return .unknown }
+        // Every Space (a full-screen call is on its own), the call's window first.
+        let all = AXAllWindows.windows(pid: pid)
+        func isCall(_ window: AXUIElement) -> Bool {
+            string(window, kAXTitleAttribute).flatMap { MeetingRules.platform(forWindowTitle: $0) } != nil
+        }
+        let windows = all.filter(isCall) + all.filter { !isCall($0) }
+        guard !windows.isEmpty else { return .unknown }
+        // In a browser, only the call's web page matters (the tab strip holds dozens of unrelated titles).
+        let pages = windows.prefix(3).compactMap { AXAllWindows.webArea(in: $0) }
+        let list = pages.isEmpty ? windows : pages
         var labels: [String] = []
         var queue = list.map { ($0, 0) }
-        let deadline = Date().addingTimeInterval(0.5)
+        let deadline = Date().addingTimeInterval(0.75)
         var visited = 0
         while !queue.isEmpty, Date() < deadline, visited < 8000 {
             let (element, depth) = queue.removeFirst()
@@ -36,7 +43,11 @@ enum CallMute {
             }
         }
         let state = MeetingRules.muteState(labels: labels)
-        debugLog(visited, labels.count, state, labels.filter { $0.lowercased().contains("micro") || $0.lowercased().contains("mute") })
+        debugLog(visited, labels.count, state, labels.filter { $0.lowercased().contains("micro") || $0.lowercased().contains("mute") || $0.lowercased().contains("mic") })
+        if ProcessInfo.processInfo.environment["ONWORD_DEBUG_CALL_AX"] != nil {
+            Logger(subsystem: "io.github.h-thavy.onword", category: "detection")
+                .notice("Call AX labels (\(labels.count)): \(labels.filter { $0.count < 60 }.prefix(80).joined(separator: " | "), privacy: .public)")
+        }
         return state
     }
 

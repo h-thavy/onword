@@ -35,23 +35,31 @@ enum MeetingAudio {
         let temp = url.deletingLastPathComponent().appendingPathComponent("recording-writing.m4a")
         try? fm.removeItem(at: temp)
         let listening = [meeting.micHQURL, meeting.systemHQURL].filter { fm.fileExists(atPath: $0.path) }
+        let expected = Double(max(mic.count, system.count)) / sampleRate
+        // It must read back about as long as the meeting before the tracks are deleted.
+        func readsBack() -> Bool {
+            guard let file = try? AVAudioFile(forReading: temp) else { return false }
+            return abs(Double(file.length) / file.processingFormat.sampleRate - expected) < 1.5
+        }
+        var usedListening = !listening.isEmpty
         do {
-            if !listening.isEmpty {
-                try writeListening(mic: meeting.micHQURL, system: meeting.systemHQURL, muting: muted, to: temp)
-            } else {
+            if usedListening {
+                // Listening copies cut off by a quit or crash can be unreadable or short: then use the 16 kHz tracks.
+                if (try? writeListening(mic: meeting.micHQURL, system: meeting.systemHQURL, muting: muted, to: temp)) == nil || !readsBack() {
+                    log.notice("Listening-quality tracks incomplete; saving the 16 kHz tracks instead")
+                    try? fm.removeItem(at: temp)
+                    usedListening = false
+                }
+            }
+            if !usedListening {
                 mute(&system, rate: sampleRate, spans: muted)
                 try write(left: mic, right: system, to: temp)
             }
-            // Check it reads back (about as long as the meeting) before deleting the tracks.
-            let expected = Double(max(mic.count, system.count)) / sampleRate
-            guard let file = try? AVAudioFile(forReading: temp),
-                  abs(Double(file.length) / file.processingFormat.sampleRate - expected) < 1.5 else {
-                throw CocoaError(.fileWriteUnknown)
-            }
+            guard readsBack() else { throw CocoaError(.fileWriteUnknown) }
             try? fm.removeItem(at: url)
             try fm.moveItem(at: temp, to: url)
             for track in [meeting.micURL, meeting.systemURL, meeting.micHQURL, meeting.systemHQURL] { try? fm.removeItem(at: track) }
-            log.notice("Saved meeting audio as recording.m4a (\(listening.isEmpty ? "16" : "48", privacy: .public) kHz, \(attributes(url)) bytes)")
+            log.notice("Saved meeting audio as recording.m4a (\(usedListening ? "48" : "16", privacy: .public) kHz, \(attributes(url)) bytes)")
             return true
         } catch {
             try? fm.removeItem(at: temp)

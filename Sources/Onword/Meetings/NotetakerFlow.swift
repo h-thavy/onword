@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Combine
 import OnwordCore
 import os
@@ -200,6 +201,84 @@ final class NotetakerFlow {
         if let folder = env["ONWORD_TEST_LIVE"] { runLiveTest(URL(fileURLWithPath: folder)) }
         // ONWORD_DEMO_GOOGLE=1 walks through the Google Calendar flow for the verification video.
         if env["ONWORD_DEMO_GOOGLE"] != nil { runGoogleDemo() }
+        // ONWORD_DEBUG_CALL_AX=1 logs what can be read from the call app on the mic (titles, page, mic labels).
+        if env["ONWORD_DEBUG_CALL_AX"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                let call = MeetingDetector.shared.current
+                let log = Logger(subsystem: "io.github.h-thavy.onword", category: "detection")
+                // ONWORD_DEBUG_CALL_AX=<bundle id> looks at that app even without a call on the mic.
+                let target = env["ONWORD_DEBUG_CALL_AX"].flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first?.processIdentifier }
+                log.notice("Call AX: app \(call?.app.name ?? "none", privacy: .public) pid \(call?.pid ?? 0) title \(call?.windowTitle ?? "-", privacy: .public) url \(call?.pageURL ?? "-", privacy: .public) platform \(call?.platform?.title ?? "-", privacy: .public)")
+                if let pid = target ?? call?.pid {
+                    Task.detached {
+                        for timeout: Float in [0.5, 3, 6] {
+                            let app = AXUIElementCreateApplication(pid)
+                            AXUIElementSetMessagingTimeout(app, timeout)
+                            AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+                            let started = Date()
+                            var windows: CFTypeRef?
+                            let windowsResult = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+                            var focused: CFTypeRef?
+                            let focusedResult = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused)
+                            var titles: [String] = []
+                            for window in (windows as? [AXUIElement]) ?? [] {
+                                var title: CFTypeRef?
+                                AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+                                titles.append(title as? String ?? "?")
+                            }
+                            log.notice("Call AX timeout \(timeout): windows \(windowsResult.rawValue) (\(titles.count): \(titles.prefix(6).joined(separator: " | "), privacy: .public)), focused \(focusedResult.rawValue), \(Date().timeIntervalSince(started), format: .fixed(precision: 2)) s")
+                        }
+                        let appElement = AXUIElementCreateApplication(pid)
+                        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+                        let enhanced = AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+                        log.notice("Call AX: set AXEnhancedUserInterface → \(enhanced.rawValue)")
+                        try? await Task.sleep(for: .seconds(3))
+                        let all = AXAllWindows.windows(pid: pid)
+                        let titles = all.map { window -> String in
+                            var title: CFTypeRef?
+                            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+                            return title as? String ?? "?"
+                        }
+                        log.notice("Call AX all Spaces: \(all.count) windows: \(titles.joined(separator: " | "), privacy: .public)")
+                        // Dump the tree under the window (roles and labels), skipping the tab strip.
+                        if let window = all.first(where: { (AXAllWindows.attribute($0, kAXTitleAttribute) ?? "").hasPrefix("Meet") }) ?? all.first {
+                            var lines: [String] = []
+                            func walk(_ e: AXUIElement, _ depth: Int) {
+                                guard depth < 26, lines.count < 160 else { return }
+                                let role = AXAllWindows.attribute(e, kAXRoleAttribute) ?? "?"
+                                let label = [kAXDescriptionAttribute, kAXTitleAttribute].compactMap { AXAllWindows.attribute(e, $0) }.first ?? ""
+                                let low = label.lowercased()
+                                if low.contains("tab bar") || low.contains("sidebar") || low.contains("top bar") || low.contains("extensions") || role == "AXButton" && depth < 4 {
+                                    lines.append(String(repeating: ".", count: depth) + role + " [" + label + "] (skipped)"); return
+                                }
+                                if role == "AXWebArea" { lines.append(String(repeating: ".", count: depth) + "AXWebArea [" + label + "] FOUND"); return }
+                                lines.append(String(repeating: ".", count: depth) + role + (label.isEmpty ? "" : " [" + String(label.prefix(50)) + "]"))
+                                var kids: CFTypeRef?
+                                if AXUIElementCopyAttributeValue(e, kAXChildrenAttribute as CFString, &kids) == .success { for k in (kids as? [AXUIElement]) ?? [] { walk(k, depth + 1) } }
+                            }
+                            walk(window, 0)
+                            for chunk in stride(from: 0, to: lines.count, by: 30) {
+                                log.notice("Call AX tree: \(lines[chunk..<min(lines.count, chunk + 30)].joined(separator: " / "), privacy: .public)")
+                            }
+                        }
+                        let state = CallMute.state(pid: pid)
+                        log.notice("Call AX: mute state \(String(describing: state), privacy: .public)")
+                    }
+                }
+            }
+        }
+        // ONWORD_TEST_HIDE_CALL_AFTER=<seconds> hides the call app then (its page can't be read while hidden).
+        if let seconds = env["ONWORD_TEST_HIDE_CALL_AFTER"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                if let pid = MeetingDetector.shared.current?.pid { NSRunningApplication(processIdentifier: pid)?.hide() }
+            }
+        }
+        // ONWORD_TEST_SHOW_CALL_AFTER=<seconds> shows it again.
+        if let seconds = env["ONWORD_TEST_SHOW_CALL_AFTER"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                if let pid = MeetingDetector.shared.current?.pid { NSRunningApplication(processIdentifier: pid)?.unhide() }
+            }
+        }
         // ONWORD_TEST_RECORD=<seconds> records a meeting for that long, starting 3 s after launch.
         if let seconds = env["ONWORD_TEST_RECORD"].flatMap(Double.init) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

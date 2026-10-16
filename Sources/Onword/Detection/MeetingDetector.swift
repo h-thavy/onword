@@ -242,13 +242,9 @@ final class MeetingDetector: ObservableObject {
         if holder.app.kind == .browser, let url = pageURL(pid: holder.pid) { holder.pageURL = url }
     }
 
+    /// Titles of the app's windows on every Space (a full-screen call is on its own Space).
     private func windowTitles(pid: pid_t) -> [String] {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.5)
-        var windows: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows) == .success,
-              let list = windows as? [AXUIElement] else { return [] }
-        return list.compactMap { AX.string($0, kAXTitleAttribute) }
+        AXAllWindows.windows(pid: pid, timeout: 0.5).compactMap { AX.string($0, kAXTitleAttribute) }
     }
 
     /// The address of the page in the browser's front window: its web area's AXURL (searched for at most
@@ -257,12 +253,23 @@ final class MeetingDetector: ObservableObject {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.3)
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        // The call's window (it may be on another Space), else the browser's focused window.
+        let windows = AXAllWindows.windows(pid: pid)
         var focused: CFTypeRef?
         let root: AXUIElement
-        if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused) == .success, let window = focused {
+        if let call = windows.first(where: { AX.string($0, kAXTitleAttribute).flatMap { MeetingRules.platform(forWindowTitle: $0) } != nil }) {
+            root = call
+        } else if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused) == .success, let window = focused {
             root = window as! AXUIElement
         } else {
-            root = app
+            root = windows.first ?? app
+        }
+        if let page = AXAllWindows.webArea(in: root) {
+            var value: CFTypeRef?
+            if AXUIElementCopyAttributeValue(page, kAXURLAttribute as CFString, &value) == .success,
+               let url = value as? URL, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                return url.absoluteString
+            }
         }
         let deadline = Date().addingTimeInterval(0.75)
         var queue: [(AXUIElement, Int)] = [(root, 0)]

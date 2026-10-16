@@ -176,8 +176,10 @@ final class MeetingRecorder: ObservableObject {
         return meeting.id
     }
 
-    /// Reads the call app's mute state (off the main thread) and gates your mic on it. Unknown counts as not
-    /// muted, so nothing you say is lost because a label couldn't be read.
+    /// Reads the call app's mute state (off the main thread) and gates your mic on it. A browser shows its page
+    /// to accessibility only while the window is on screen, so when the call's window is hidden (another Space,
+    /// another app in front) the reading is unknown: the last state read stays (you mute and unmute in the
+    /// call's window, where it can be read). Before any reading, you count as unmuted.
     private func checkMute() {
         // Any call app on the mic (its platform may not be known: the page title can't always be read).
         guard NotetakerSettings.skipMicWhenMuted, !muteChecking,
@@ -193,6 +195,7 @@ final class MeetingRecorder: ObservableObject {
             await MainActor.run {
                 self.muteChecking = false
                 guard self.isRecording else { return }
+                guard state != .unknown else { return }
                 let muted = state == .muted
                 guard muted != self.mutedInCall.isOn else { return }
                 self.mutedInCall.isOn = muted
