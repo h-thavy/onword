@@ -2,7 +2,7 @@ import Foundation
 
 /// Which call app a meeting is on. Detection rules: a native meeting app using the
 /// microphone is enough on its own; a browser or chat app also needs a window that looks like a call.
-public enum MeetingPlatform: String, Codable, CaseIterable {
+public enum MeetingPlatform: String, Codable, CaseIterable, Sendable {
     case zoom, googleMeet, teams, slack, facetime, webex, discord
 
     public var title: String {
@@ -210,5 +210,108 @@ public enum MeetingLink {
             }
         }
         return nil
+    }
+}
+
+/// An app whose use of the microphone may mean a call (Wispr Flow's table, plus Opera GX).
+public struct CallApp: Equatable, Sendable {
+    public enum Kind: Sendable { case meetingApp, browser, chat }
+    public let name: String
+    public let kind: Kind
+    /// For meeting apps, the platform it is; browsers and chat apps get theirs from the page or window.
+    public let platform: MeetingPlatform?
+}
+
+extension MeetingRules {
+    /// Bundle ID (lower-case) → app. Any of these taking the mic shows "Meeting detected".
+    static let callApps: [String: CallApp] = {
+        func app(_ name: String, _ kind: CallApp.Kind, _ platform: MeetingPlatform? = nil, _ ids: [String]) -> [(String, CallApp)] {
+            ids.map { ($0, CallApp(name: name, kind: kind, platform: platform)) }
+        }
+        let rows: [[(String, CallApp)]] = [
+            app("FaceTime", .meetingApp, .facetime, ["com.apple.facetime", "com.apple.avconferenced"]),
+            app("Webex", .meetingApp, .webex, ["com.cisco.webexmeetingsapp", "cisco-systems.spark"]),
+            app("Dialpad Meetings", .meetingApp, nil, ["com.electron.uberconference"]),
+            app("Gather", .meetingApp, nil, ["com.gather.gather"]),
+            app("Lark", .meetingApp, nil, ["com.larksuite.larkapp"]),
+            app("Microsoft Teams", .meetingApp, .teams, ["com.microsoft.teams", "com.microsoft.teams2", "com.microsoft.teams2.modulehost"]),
+            app("VooV Meeting", .meetingApp, nil, ["com.tencent.tencentmeeting"]),
+            app("Zoom", .meetingApp, .zoom, ["us.zoom.xos"]),
+            app("Arc", .browser, nil, ["company.thebrowser.browser"]),
+            app("Dia", .browser, nil, ["company.thebrowser.dia"]),
+            app("ChatGPT Atlas", .browser, nil, ["com.openai.atlas"]),
+            app("Brave", .browser, nil, ["com.brave.browser"]),
+            app("Chrome", .browser, nil, ["com.google.chrome", "com.google.chrome.beta", "com.google.chrome.canary",
+                                           "com.google.chrome.dev", "org.chromium.chromium"]),
+            app("Comet", .browser, nil, ["ai.perplexity.comet"]),
+            app("Microsoft Edge", .browser, nil, ["com.microsoft.edgemac"]),
+            app("Firefox", .browser, nil, ["org.mozilla.firefox"]),
+            app("Opera", .browser, nil, ["com.operasoftware.opera"]),
+            app("Opera GX", .browser, nil, ["com.operasoftware.operagx"]),
+            app("Safari", .browser, nil, ["com.apple.safari", "com.apple.webkit.gpu"]),
+            app("Vivaldi", .browser, nil, ["com.vivaldi.vivaldi"]),
+            app("Zen Browser", .browser, nil, ["app.zen-browser.zen"]),
+            app("Slack", .chat, nil, ["com.tinyspeck.slackmacgap"]),
+            app("Discord", .chat, nil, ["com.hnc.discord"]),
+            app("WhatsApp", .chat, nil, ["net.whatsapp.whatsapp"]),
+            app("Aircall", .chat, nil, ["io.aircall.phone", "io.aircall.workspace"]),
+            app("Dialpad", .chat, nil, ["com.electron.dialpad"]),
+            app("ClickUp", .chat, nil, ["com.clickup.desktop-app"]),
+            app("Tuple", .chat, nil, ["app.tuple.app"]),
+        ]
+        return Dictionary(rows.flatMap { $0 }, uniquingKeysWith: { first, _ in first })
+    }()
+
+    /// The call app for a mic holder's bundle ID; helper processes ("….helper", "….helper.renderer") count as
+    /// their app.
+    public static func callApp(bundleID: String) -> CallApp? {
+        var id = bundleID.trimmingCharacters(in: .whitespaces).lowercased()
+        if let app = callApps[id] { return app }
+        for suffix in [".helper.renderer", ".helper.plugin", ".helper.gpu", ".web.helper", ".helper"] where id.hasSuffix(suffix) {
+            id.removeLast(suffix.count)
+            return callApps[id]
+        }
+        return nil
+    }
+
+    /// The meeting platform of a page address (Google Meet, Zoom's web client, Teams, Webex, a Slack huddle,
+    /// a Discord voice channel).
+    public static func platform(forURL url: String) -> MeetingPlatform? {
+        guard let components = URLComponents(string: url), let host = components.host?.lowercased(),
+              ["https", "http"].contains(components.scheme?.lowercased() ?? "") else { return nil }
+        func on(_ domain: String) -> Bool { host == domain || host.hasSuffix("." + domain) }
+        let path = components.path.lowercased()
+        if on("meet.google.com") { return .googleMeet }
+        if on("zoom.us") || on("zoomgov.com") { return .zoom }
+        if on("teams.microsoft.com") || on("teams.live.com") { return .teams }
+        if on("webex.com") { return .webex }
+        if on("slack.com"), path.contains("/huddle/") { return .slack }
+        if on("discord.com"), path.hasPrefix("/channels/") { return .discord }
+        return nil
+    }
+
+    /// The meeting's code in a Google Meet or Zoom address ("abc-defg-hij", "84512345678"), to find its
+    /// calendar event.
+    public static func meetingCode(inURL url: String) -> String? {
+        let text = url.lowercased()
+        let patterns = [#"meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})"#,
+                        #"(?:zoom\.us|zoomgov\.com)/(?:j|s|wc/join)/(\d+)"#, #"(?:zoom\.us|zoomgov\.com)/wc/(\d+)/(?:join|start)"#]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let range = Range(match.range(at: 1), in: text) else { continue }
+            return String(text[range])
+        }
+        return nil
+    }
+
+    /// Whether a detected call may start the Notetaker by itself ("Start automatically"): a meeting app, a
+    /// browser on a Meet/Teams/Zoom page, a Slack huddle, or a call matched to a calendar event (not browsers).
+    public static func mayAutoStart(_ app: CallApp, pagePlatform: MeetingPlatform?, calendarMatched: Bool) -> Bool {
+        switch app.kind {
+        case .meetingApp: return true
+        case .browser: return [.googleMeet, .teams, .zoom].contains(pagePlatform)
+        case .chat: return pagePlatform == .slack || calendarMatched
+        }
     }
 }

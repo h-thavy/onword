@@ -107,4 +107,33 @@ final class MeetingLinkTests: XCTestCase {
         let link = MeetingLink.find(in: ["https://meet.google.com/aaa-bbbb-ccc", "https://zoom.us/j/1"])
         XCTAssertEqual(link?.platform, .googleMeet)
     }
+
+    func testAnyCallAppTakingTheMicIsDetected() {
+        XCTAssertEqual(MeetingRules.callApp(bundleID: "us.zoom.xos")?.platform, .zoom)
+        XCTAssertEqual(MeetingRules.callApp(bundleID: "com.operasoftware.OperaGX")?.name, "Opera GX")
+        XCTAssertEqual(MeetingRules.callApp(bundleID: "com.google.Chrome.helper")?.name, "Chrome")
+        XCTAssertEqual(MeetingRules.callApp(bundleID: "com.apple.WebKit.GPU")?.name, "Safari")
+        XCTAssertEqual(MeetingRules.callApp(bundleID: "com.tinyspeck.slackmacgap")?.kind, .chat)
+        XCTAssertNil(MeetingRules.callApp(bundleID: "com.apple.corespeechd"))
+        XCTAssertNil(MeetingRules.callApp(bundleID: "com.apple.QuickTimePlayerX"))
+    }
+
+    func testMeetingPagesAndCodes() {
+        XCTAssertEqual(MeetingRules.platform(forURL: "https://meet.google.com/abc-defg-hij?authuser=0"), .googleMeet)
+        XCTAssertEqual(MeetingRules.platform(forURL: "https://us05web.zoom.us/wc/84512345678/join"), .zoom)
+        XCTAssertEqual(MeetingRules.platform(forURL: "https://teams.microsoft.com/l/meetup-join/19%3a"), .teams)
+        XCTAssertEqual(MeetingRules.platform(forURL: "https://app.slack.com/huddle/T1/C2"), .slack)
+        XCTAssertNil(MeetingRules.platform(forURL: "https://app.slack.com/client/T1/C2"))
+        XCTAssertNil(MeetingRules.platform(forURL: "https://www.youtube.com/watch?v=1"))
+        XCTAssertEqual(MeetingRules.meetingCode(inURL: "https://meet.google.com/abc-defg-hij"), "abc-defg-hij")
+        XCTAssertEqual(MeetingRules.meetingCode(inURL: "https://us05web.zoom.us/j/84512345678?pwd=x"), "84512345678")
+        XCTAssertNil(MeetingRules.meetingCode(inURL: "https://meet.google.com/landing"))
+    }
+
+    func testOnlyMeetingsStartByThemselves() {
+        let chrome = MeetingRules.callApp(bundleID: "com.google.chrome")!, zoom = MeetingRules.callApp(bundleID: "us.zoom.xos")!
+        XCTAssertTrue(MeetingRules.mayAutoStart(zoom, pagePlatform: nil, calendarMatched: false))
+        XCTAssertTrue(MeetingRules.mayAutoStart(chrome, pagePlatform: .googleMeet, calendarMatched: false))
+        XCTAssertFalse(MeetingRules.mayAutoStart(chrome, pagePlatform: nil, calendarMatched: true))
+    }
 }

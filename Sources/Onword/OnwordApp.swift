@@ -142,7 +142,7 @@ private struct MenuContent: View {
         if controller.modelFailure != nil {
             Button("Retry speech model download") { controller.retryModel() }
         }
-        if let call = detector.current { Text("In a \(call.platform.title) call") }
+        if let call = detector.current { Text("In a \(call.platform?.title ?? call.app.name) call") }
 
         Divider()
 

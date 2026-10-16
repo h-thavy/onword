@@ -29,6 +29,13 @@ enum MicHolders {
             // attribute them to the app that owns them.
             let app = NSRunningApplication(processIdentifier: pid)
             let rawID = app?.bundleIdentifier ?? string(object, kAudioProcessPropertyBundleID) ?? ""
+            // Siri and dictation listen without it being a call.
+            guard !["com.apple.corespeech", "com.apple.corespeechd"].contains(rawID.lowercased()) else { return nil }
+            // A helper or WebKit process (Safari's audio runs in com.apple.WebKit.GPU) counts as the app
+            // responsible for it.
+            if app?.activationPolicy != .regular, let owner = responsibleApp(for: pid), owner.pid != pid {
+                return Holder(pid: owner.pid, bundleID: owner.bundleID)
+            }
             let bundleID = owningAppBundleID(rawID)
             // Use the owning app's process (for its windows), e.g. Chrome's audio helper → Chrome.
             if bundleID != rawID, let parent = parentPID(of: pid),
@@ -37,6 +44,15 @@ enum MicHolders {
             }
             return Holder(pid: pid, bundleID: bundleID)
         }
+    }
+
+    /// The app macOS holds responsible for a process (e.g. Safari for its WebKit processes).
+    private static func responsibleApp(for pid: pid_t) -> (pid: pid_t, bundleID: String)? {
+        typealias Responsible = @convention(c) (pid_t) -> pid_t
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
+        let owner = unsafeBitCast(symbol, to: Responsible.self)(pid)
+        guard owner > 0, let app = NSRunningApplication(processIdentifier: owner), let id = app.bundleIdentifier else { return nil }
+        return (owner, id)
     }
 
     private static func parentPID(of pid: pid_t) -> pid_t? {

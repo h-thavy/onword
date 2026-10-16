@@ -297,6 +297,7 @@ final class NotetakerFlow {
 
     /// The reminder pill's primary action (or its auto-start countdown).
     func startFromReminder(_ reminder: FlowBarIsland.Reminder) {
+        if reminder.surface == .detected { MeetingDetector.shared.cardUsed() }
         FlowBarIsland.shared.dismissReminder(reminder.id)
         if let meeting = reminder.meeting {
             reminder.surface == .scheduled && meeting.joinURL != nil ? joinAndStart(meeting) : start(meeting: meeting)

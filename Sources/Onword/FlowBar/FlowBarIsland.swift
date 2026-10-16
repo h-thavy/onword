@@ -17,6 +17,9 @@ final class FlowBarIsland: ObservableObject {
         enum Surface { case scheduled, detected }
         let id: String
         var title: String
+        /// Detected calls: the app or platform ("Google Meet in Opera GX"), or "Meeting detected" under an
+        /// event's title.
+        var subtitle: String? = nil
         var start: Date
         var surface: Surface
         var platform: MeetingPlatform?
@@ -174,7 +177,10 @@ final class FlowBarIsland: ObservableObject {
         // Reminders expire unless you're hovering them.
         if !pillHovered, !PopMenu.shared.isOpen {
             let expired = reminders.filter { $0.dismissAt <= now }
-            for r in expired { dismissReminder(r.id) }
+            for r in expired {
+                if r.surface == .detected { MeetingDetector.shared.cardIgnored() }
+                dismissReminder(r.id)
+            }
         }
         // Auto-start countdowns.
         for (id, began) in autoStartStarted {
@@ -317,7 +323,10 @@ private struct ReminderCard: View {
         .shadow(color: .black.opacity(0.38), radius: 16, y: 8)
         .overlay(alignment: .topLeading) {
             if hovering {
-                Button { island.dismissReminder(reminder.id) } label: {
+                Button {
+                    if reminder.surface == .detected { MeetingDetector.shared.cardClosed() }
+                    island.dismissReminder(reminder.id)
+                } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.6))
                         .frame(width: 24, height: 24)
@@ -375,7 +384,7 @@ private struct ReminderCard: View {
     private func meta(now: Date) -> some View {
         HStack(spacing: 5) {
             if imminent(now) { RoundedRectangle(cornerRadius: 2).fill(NT.green500).frame(width: 6, height: 6) }
-            Text(timeLabel(now))
+            Text(reminder.subtitle.map { "\($0) · \(timeLabel(now))" } ?? timeLabel(now))
         }
         .font(Theme.sans(12)).foregroundStyle(Color(hex: 0x71716E))
     }
