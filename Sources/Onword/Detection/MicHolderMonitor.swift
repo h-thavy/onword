@@ -31,10 +31,13 @@ enum MicHolders {
             let rawID = app?.bundleIdentifier ?? string(object, kAudioProcessPropertyBundleID) ?? ""
             // Siri and dictation listen without it being a call.
             guard !["com.apple.corespeech", "com.apple.corespeechd"].contains(rawID.lowercased()) else { return nil }
-            // A helper or WebKit process (Safari's audio runs in com.apple.WebKit.GPU) counts as the app
-            // responsible for it.
-            if app?.activationPolicy != .regular, let owner = responsibleApp(for: pid), owner.pid != pid {
-                return Holder(pid: owner.pid, bundleID: owner.bundleID)
+            // A helper process counts as the app it belongs to: the app whose bundle contains it (Opera GX's
+            // helper calls itself "com.operasoftware.Opera.helper"), or else the app responsible for it
+            // (Safari's audio runs in com.apple.WebKit.GPU, outside Safari.app).
+            if app?.activationPolicy != .regular {
+                if let owner = containingApp(for: pid) ?? responsibleApp(for: pid), owner.pid != pid {
+                    return Holder(pid: owner.pid, bundleID: owner.bundleID)
+                }
             }
             let bundleID = owningAppBundleID(rawID)
             // Use the owning app's process (for its windows), e.g. Chrome's audio helper → Chrome.
@@ -46,12 +49,30 @@ enum MicHolders {
         }
     }
 
+    /// The nearest parent process that's an app whose bundle contains this process's program.
+    private static func containingApp(for pid: pid_t) -> (pid: pid_t, bundleID: String)? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        let path = String(cString: buffer)
+        var current = pid
+        for _ in 0..<6 {
+            guard let parent = parentPID(of: current) else { return nil }
+            if let app = NSRunningApplication(processIdentifier: parent), app.activationPolicy == .regular,
+               let id = app.bundleIdentifier, let bundle = app.bundleURL?.path, path.hasPrefix(bundle + "/") {
+                return (parent, id)
+            }
+            current = parent
+        }
+        return nil
+    }
+
     /// The app macOS holds responsible for a process (e.g. Safari for its WebKit processes).
     private static func responsibleApp(for pid: pid_t) -> (pid: pid_t, bundleID: String)? {
         typealias Responsible = @convention(c) (pid_t) -> pid_t
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
         let owner = unsafeBitCast(symbol, to: Responsible.self)(pid)
-        guard owner > 0, let app = NSRunningApplication(processIdentifier: owner), let id = app.bundleIdentifier else { return nil }
+        guard owner > 0, let app = NSRunningApplication(processIdentifier: owner), app.activationPolicy == .regular,
+              let id = app.bundleIdentifier else { return nil }
         return (owner, id)
     }
 
