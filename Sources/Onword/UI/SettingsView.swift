@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var dialog: Dialog?
     @AppStorage("notetakerOpenNotepad") private var openNotepad = true
     @AppStorage("notetakerStopWhenCallEnds") private var stopWhenCallEnds = true
+    @AppStorage("notetakerSkipMicWhenMuted") private var skipMicWhenMuted = true
     @AppStorage("notetakerMaxLength") private var maxLength = 120
     @AppStorage("notetakerReminderLead") private var reminderLead = 15
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -327,6 +328,9 @@ struct SettingsView: View {
                 }
                 SettingsLine("Stop Notetaker when a call ends", "Counts down first, so you can keep going.") {
                     SettingsSwitch(isOn: $stopWhenCallEnds)
+                }
+                SettingsLine("Don't record me while I'm muted", "When Zoom, Google Meet or Teams shows you muted, your mic is left out of the notes.") {
+                    SettingsSwitch(isOn: $skipMicWhenMuted)
                 }
                 SettingsLine("Maximum meeting length", "Notetaker checks in 5 minutes before it stops.", last: true) {
                     SettingsSelect(value: NotetakerSettings.title(forMinutes: maxLength),

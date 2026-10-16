@@ -26,6 +26,11 @@ final class MeetingRecorder: ObservableObject {
     private var system: AnyObject?   // SystemAudioCapture on macOS 14.2+
     private var micWriter: AudioFileWriter?
     private var systemWriter: AudioFileWriter?
+    /// While you're muted in the call (and the setting is on), your mic is recorded as silence.
+    private let mutedInCall = MuteGate()
+    private var muteTimer: Timer?
+    private var muteChecking = false
+    private var muteNoticeShown = false
     /// The listening-quality copies (48 kHz AAC) of the two tracks.
     private var micHQWriter: HighQualityWriter?
     private var systemHQWriter: HighQualityWriter?
@@ -93,9 +98,11 @@ final class MeetingRecorder: ObservableObject {
             micWriter = writer
             let high = try? HighQualityWriter(url: micHQURL)
             micHQWriter = high
-            mic.onHighQuality = high.map { writer in { writer.append($0) } }
+            let gate = mutedInCall
+            mic.onHighQuality = high.map { writer in { writer.append(gate.isOn ? [Float](repeating: 0, count: $0.count) : $0) } }
             let levels = levels
-            mic.onSamples = { samples in
+            mic.onSamples = { heard in
+                let samples = gate.isOn ? [Float](repeating: 0, count: heard.count) : heard
                 writer.append(samples)
                 micBuffer.append(samples)
                 levels.mic = min(1, Resampler.rms(samples) * 8)
@@ -150,17 +157,60 @@ final class MeetingRecorder: ObservableObject {
 
         currentID = meeting.id
         MeetingStore.shared.save(meeting)
+        mutedInCall.isOn = false
+        muteNoticeShown = false
+        muteTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkMute() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.elapsed = Date().timeIntervalSince(self.startedAt)
                 self.micLevel = self.levels.mic
                 self.systemLevel = self.levels.system
-                if self.micLevel > 0.02 { self.lastMicSound = Date() }
+                // Silence while you're muted in the call isn't a mic problem.
+                if self.micLevel > 0.02 || self.mutedInCall.isOn { self.lastMicSound = Date() }
             }
         }
         log.notice("Meeting recording started (system audio: \(meeting.hasSystemAudio), resumed: \(self.resumingDuration != nil))")
         return meeting.id
+    }
+
+    /// Reads the call app's mute state (off the main thread) and gates your mic on it. Unknown counts as not
+    /// muted, so nothing you say is lost because a label couldn't be read.
+    private func checkMute() {
+        // Any call app on the mic (its platform may not be known: the page title can't always be read).
+        guard NotetakerSettings.skipMicWhenMuted, !muteChecking,
+              let pid = MeetingDetector.shared.current?.pid ?? MeetingDetector.shared.findMeeting()?.pid else {
+            if !NotetakerSettings.skipMicWhenMuted { mutedInCall.isOn = false }
+            return
+        }
+        let callName = MeetingDetector.shared.current.map { $0.platform?.title ?? $0.app.name }
+            ?? MeetingDetector.shared.findMeeting()?.platform.title ?? "the call"
+        muteChecking = true
+        Task.detached(priority: .utility) {
+            let state = CallMute.state(pid: pid)
+            await MainActor.run {
+                self.muteChecking = false
+                guard self.isRecording else { return }
+                let muted = state == .muted
+                guard muted != self.mutedInCall.isOn else { return }
+                self.mutedInCall.isOn = muted
+                self.log.notice("\(muted ? "Muted in the call: your mic isn't recorded" : "Unmuted: recording your mic", privacy: .public) (\(callName, privacy: .public))")
+                if muted, !self.muteNoticeShown {
+                    self.muteNoticeShown = true
+                    FlowBarIsland.shared.show(.init(
+                        title: "You're muted in \(callName)",
+                        kind: .standard(status: .info, body: "Notetaker leaves your mic out of the notes until you unmute."),
+                        actions: [.init(title: "Got it", style: .light) {},
+                                  .init(title: "Record me anyway", style: .dark) {
+                                      NotetakerSettings.skipMicWhenMuted = false
+                                      self.mutedInCall.isOn = false
+                                  }],
+                        timeout: 6))
+                }
+            }
+        }
     }
 
     /// Records more into a stopped note.
@@ -172,6 +222,9 @@ final class MeetingRecorder: ObservableObject {
         guard let id = currentID else { return }
         timer?.invalidate()
         timer = nil
+        muteTimer?.invalidate()
+        muteTimer = nil
+        mutedInCall.isOn = false
         _ = mic.stop()
         mic.onSamples = nil
         if #available(macOS 14.2, *) { (system as? SystemAudioCapture)?.stop() }
@@ -365,5 +418,15 @@ private extension Array where Element == String {
     func uniqued() -> [String] {
         var seen = Set<String>()
         return filter { seen.insert($0.lowercased()).inserted }
+    }
+}
+
+/// A switch read on the audio thread and set on the main thread.
+final class MuteGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isOn: Bool {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }

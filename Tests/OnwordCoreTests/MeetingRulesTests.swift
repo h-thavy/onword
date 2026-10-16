@@ -136,4 +136,16 @@ final class MeetingLinkTests: XCTestCase {
         XCTAssertTrue(MeetingRules.mayAutoStart(chrome, pagePlatform: .googleMeet, calendarMatched: false))
         XCTAssertFalse(MeetingRules.mayAutoStart(chrome, pagePlatform: nil, calendarMatched: true))
     }
+
+    func testMuteStateFromCallControls() {
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Participants", "audio, turn on, currently muted"]), .muted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["audio, turn off, currently unmuted", "Mute"]), .unmuted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Your camera is on. Your microphone is off."]), .muted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Turn off microphone (⌘ + d)"]), .unmuted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Unmute (⌘+Shift+M)"]), .muted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Mute (⌘+Shift+M)"]), .unmuted)
+        // Zoom's own label wins over a "Mute" button next to someone else.
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Mute", "audio, turn on, currently muted"]), .muted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Share screen", "Chat"]), .unknown)
+    }
 }

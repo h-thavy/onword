@@ -156,7 +156,15 @@ final class AudioRecorder {
             var id = chosen.id
             let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                               &id, UInt32(MemoryLayout<AudioDeviceID>.size))
-            if status == noErr { device = chosen } else { log.error("Couldn't select \(chosen.name, privacy: .public): \(status)") }
+            if status == noErr {
+                device = chosen
+                // The input node keeps the previous mic's output format (e.g. a Bluetooth headset's 24 kHz) and
+                // then won't start on a 48 kHz mic (-10868). Match it to the chosen mic.
+                var format = input.inputFormat(forBus: 0).streamDescription.pointee
+                let set = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1,
+                                               &format, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
+                if set != noErr { log.error("Couldn't match \(chosen.name, privacy: .public)'s format: \(set)") }
+            } else { log.error("Couldn't select \(chosen.name, privacy: .public): \(status)") }
         }
         currentDeviceID = device?.id
 
@@ -300,6 +308,7 @@ final class AudioRecorder {
             try startEngine()
             restartAttempts = 0
         } catch {
+            log.error("Microphone didn't start: \(error.localizedDescription, privacy: .public)")
             restartAttempts += 1
             guard restartAttempts <= 10 else {
                 log.error("Microphone did not come back after \(self.restartAttempts) attempts")

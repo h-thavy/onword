@@ -315,3 +315,26 @@ extension MeetingRules {
         }
     }
 }
+
+/// Whether you're muted in the call app, read from its controls' accessibility labels.
+public enum CallMuteState: Sendable { case muted, unmuted, unknown }
+
+extension MeetingRules {
+    /// The mute state from a call app's labels. Zoom's and Google Meet's own wording comes first (the labels
+    /// Wispr Flow's helper reads); a button that starts with "Unmute" / "Mute" (Teams) is the fallback, as
+    /// "Mute" buttons next to other people (Zoom's participant list) would otherwise mislead.
+    public static func muteState(labels: [String]) -> CallMuteState {
+        let texts = labels.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        for text in texts {
+            if text.contains("currently unmuted") || text == "computer audio unmuted" || text.contains("your microphone is on")
+                || text.hasPrefix("turn off microphone") { return .unmuted }
+            if text.contains("currently muted") || text == "computer audio muted" || text.contains("your microphone is off")
+                || text.hasPrefix("turn on microphone") { return .muted }
+        }
+        for text in texts {
+            if text.hasPrefix("unmute") { return .muted }
+            if text == "mute" || text.hasPrefix("mute (") || text.hasPrefix("mute mic") || text.hasPrefix("mute microphone") { return .unmuted }
+        }
+        return .unknown
+    }
+}

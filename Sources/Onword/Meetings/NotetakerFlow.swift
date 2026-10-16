@@ -15,6 +15,12 @@ enum NotetakerSettings {
         get { UserDefaults.standard.object(forKey: "notetakerStopWhenCallEnds") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "notetakerStopWhenCallEnds") }
     }
+    /// "Don't record me while I'm muted in the call" (on): your mic is recorded as silence while the call app
+    /// shows you muted.
+    static var skipMicWhenMuted: Bool {
+        get { UserDefaults.standard.object(forKey: "notetakerSkipMicWhenMuted") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "notetakerSkipMicWhenMuted") }
+    }
     /// Maximum meeting length in minutes: 30, 60, 120 (default) or 180.
     static let maxLengthOptions = [30, 60, 120, 180]
     static var maxLengthMinutes: Int {

@@ -233,10 +233,13 @@ final class MeetingDetector: ObservableObject {
     /// Browsers and chat apps: the page in front and the window titles, to tell which meeting it is.
     private func fillPage(_ holder: inout CallHolder) {
         guard holder.app.kind != .meetingApp else { return }
+        // A read that comes back empty (the app was busy) keeps what an earlier read found.
         let titles = windowTitles(pid: holder.pid)
-        holder.windowTitle = titles.first { MeetingRules.platform(forWindowTitle: $0, isSlack: holder.app.name == "Slack") != nil }
-            ?? titles.first
-        if holder.app.kind == .browser { holder.pageURL = pageURL(pid: holder.pid) }
+        if let title = titles.first(where: { MeetingRules.platform(forWindowTitle: $0, isSlack: holder.app.name == "Slack") != nil })
+            ?? (holder.windowTitle == nil ? titles.first : nil) {
+            holder.windowTitle = title
+        }
+        if holder.app.kind == .browser, let url = pageURL(pid: holder.pid) { holder.pageURL = url }
     }
 
     private func windowTitles(pid: pid_t) -> [String] {
