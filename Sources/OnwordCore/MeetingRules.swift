@@ -333,7 +333,8 @@ extension MeetingRules {
         }
         for text in texts {
             if text.hasPrefix("unmute") { return .muted }
-            if text == "mute" || text.hasPrefix("mute (") || text.hasPrefix("mute mic") || text.hasPrefix("mute microphone") { return .unmuted }
+            if text == "mute" || text.hasPrefix("mute (") || text.hasPrefix("mute mic") || text.hasPrefix("mute microphone")
+                || text.hasPrefix("mute my") { return .unmuted }
         }
         return .unknown
     }

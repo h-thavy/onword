@@ -147,5 +147,7 @@ final class MeetingLinkTests: XCTestCase {
         // Zoom's own label wins over a "Mute" button next to someone else.
         XCTAssertEqual(MeetingRules.muteState(labels: ["Mute", "audio, turn on, currently muted"]), .muted)
         XCTAssertEqual(MeetingRules.muteState(labels: ["Share screen", "Chat"]), .unknown)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Unmute my microphone"]), .muted)
+        XCTAssertEqual(MeetingRules.muteState(labels: ["Mute my microphone"]), .unmuted)
     }
 }

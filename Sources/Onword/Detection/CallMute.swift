@@ -25,6 +25,7 @@ enum CallMute {
             }
             // Stop as soon as the call's own wording is found.
             if let last = labels.last, MeetingRules.muteState(labels: [last]) != .unknown, !last.lowercased().hasPrefix("mute") {
+                debugLog(visited, labels.count, MeetingRules.muteState(labels: [last]), [last])
                 return MeetingRules.muteState(labels: [last])
             }
             guard depth < 45 else { continue }
@@ -35,11 +36,15 @@ enum CallMute {
             }
         }
         let state = MeetingRules.muteState(labels: labels)
-        if ProcessInfo.processInfo.environment["ONWORD_DEBUG_MUTE"] != nil {
-            Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
-                .notice("Mute check: \(visited) elements, \(labels.count) labels, \(String(describing: state), privacy: .public); \(labels.filter { $0.lowercased().contains("micro") || $0.lowercased().contains("mute") }.prefix(3).joined(separator: " | "), privacy: .public)")
-        }
+        debugLog(visited, labels.count, state, labels.filter { $0.lowercased().contains("micro") || $0.lowercased().contains("mute") })
         return state
+    }
+
+    /// ONWORD_DEBUG_MUTE=1 logs each reading and the labels it was based on.
+    private static func debugLog(_ visited: Int, _ count: Int, _ state: CallMuteState, _ labels: [String]) {
+        guard ProcessInfo.processInfo.environment["ONWORD_DEBUG_MUTE"] != nil else { return }
+        Logger(subsystem: "io.github.h-thavy.onword", category: "meetings")
+            .notice("Mute check: \(visited) elements, \(count) labels, \(String(describing: state), privacy: .public); \(labels.prefix(3).joined(separator: " | "), privacy: .public)")
     }
 
     private static func string(_ element: AXUIElement, _ attribute: String) -> String? {
