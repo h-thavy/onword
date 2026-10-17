@@ -24,5 +24,6 @@ let package = Package(
             ]
         ),
         .testTarget(name: "OnwordCoreTests", dependencies: ["OnwordCore"]),
+        .testTarget(name: "OnwordTests", dependencies: ["Onword"]),
     ]
 )

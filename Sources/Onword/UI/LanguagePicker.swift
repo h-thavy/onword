@@ -201,7 +201,7 @@ struct LanguagePicker: View {
     }
 }
 
-/// "Downloading the model for Japanese… 42%", with Cancel, or the error with Try again.
+/// Names the pending model separately from the current one, with Cancel or an explicit retry.
 struct PendingModelBanner: View {
     let pending: DictationController.PendingModel
     @ObservedObject private var dictation = DictationController.shared
@@ -210,13 +210,14 @@ struct PendingModelBanner: View {
         HStack(spacing: 10) {
             if let failure = pending.failure {
                 Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                Text(failure).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text("\(pending.model.displayName): \(failure)").foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Try again") { dictation.retryPendingModel() }.buttonStyle(SecondaryButtonStyle(fullWidth: false))
             } else {
                 ProgressView(value: pending.progress).frame(width: 90).tint(Theme.ink)
-                Text("Downloading the model for \(Languages.name(pending.language))… \(Int(pending.progress * 100))%")
+                Text("\(pending.progress < 1 ? "Downloading" : "Finishing download of") \(pending.model.displayName)… \(Int(pending.progress * 100))%")
                     .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
             }
             Button("Cancel") { dictation.cancelPendingModel() }.buttonStyle(.plainPointer).foregroundStyle(Theme.inkTertiary)

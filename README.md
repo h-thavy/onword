@@ -72,6 +72,16 @@ curl -fsSL https://raw.githubusercontent.com/h-thavy/onword/main/scripts/install
 
 You can change the dictation key in **Settings → General → Shortcuts**.
 
+## Local voice models
+
+Open **Settings → General → Local voice model → Change model** to see the active model and choose Whisper Base (Fast, about 150 MB), Small (Balanced, about 500 MB), or Large v3 Turbo (Most accurate, about 630 MB). Base and Small use English-only variants when English is your only language, and multilingual variants otherwise. The default remains Small (English); existing model and language preferences are kept.
+
+<img src="docs/images/local-model-picker.png" width="640" alt="Local Whisper model picker with model names, sizes and download availability">
+
+All speech recognition uses **WhisperKit with Core ML on your Mac**. Model files download from Hugging Face when needed, then work offline. Settings shows download and loading progress, errors, and retry controls. A pending download keeps the current model available until the new model is downloaded and starts loading. Your choice is saved on this Mac. Khmer speech uses a separate Whisper Small fine-tune, downloaded from an Onword GitHub release when Khmer is selected.
+
+Live meeting transcripts use the dictation model. Final meeting transcripts use Large v3 Turbo, with the dictation model as a local fallback. Onword does not use the Wispr Flow service. Parakeet is not currently supported: adding it requires a separate inference backend and integration with language detection and meeting timestamps.
+
 ## Privacy
 
 Speech-to-text runs on your Mac with [WhisperKit](https://github.com/argmaxinc/WhisperKit), speakers are told apart with SpeakerKit, and summaries are written by Apple's on-device model. The only download is the speech model, once. Dictations are kept as text only — never audio — and everything lives in `~/Library/Application Support/Onword/`. Choose how long history is kept in **Settings → Data and Privacy**.

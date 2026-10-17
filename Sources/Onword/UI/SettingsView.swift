@@ -26,7 +26,7 @@ struct SettingsView: View {
     @AppStorage(HistoryRetention.key) private var historyRetention = HistoryRetention.keep.rawValue
 
     enum Dialog: Identifiable {
-        case shortcut, microphone, languages, confirmNeverStore
+        case shortcut, microphone, languages, voiceModel, confirmNeverStore
         var id: Self { self }
     }
 
@@ -160,6 +160,7 @@ struct SettingsView: View {
 
     private var general: some View {
         SettingsPage(title: "General") {
+            VoiceModelSettings { dialog = .voiceModel }
             SettingsSection {
                 SettingsLine("Your name", "Used in greetings and for you in meeting notes.") {
                     TextField("Name", text: $userName)
@@ -178,13 +179,6 @@ struct SettingsView: View {
                 SettingsLine("Languages", languagesDescription) {
                     Button("Change") { dialog = .languages }.buttonStyle(SecondaryButtonStyle())
                 }
-                SettingsLine("Speed", "Runs on this Mac. More accurate models take longer to load.") {
-                    SettingsSelect(value: (dictation.pendingModel?.model.tier ?? dictation.model.tier).title,
-                                   options: Transcriber.Model.Tier.allCases.map { tier in
-                                       SelectOption(id: tier.title, title: tier.title, detail: tier.detail) { dictation.chooseTier(tier) }
-                                   },
-                                   menuWidth: 300)
-                }
                 SettingsLine("Remove filler words", "Drops “um”, “uh” and “hmm” from dictation.") {
                     SettingsSwitch(isOn: $dictation.removeFillers)
                 }
@@ -201,7 +195,6 @@ struct SettingsView: View {
                                    selectedID: appearance.rawValue, style: .menu)
                 }
             }
-            if let pending = dictation.pendingModel { PendingModelBanner(pending: pending) }
             if dictation.hotkey == .fn, let conflict = GlobeKey.conflict {
                 SettingsSection {
                     SettingsLine("🌐 key conflict", "Your 🌐 key also \(conflict). Set “Press 🌐 key to” → Do Nothing.", last: true) {
@@ -485,6 +478,8 @@ struct SettingsView: View {
                 LanguagePicker { dialog = nil }
             }
             .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        case .voiceModel:
+            VoiceModelPicker { dialog = nil }
         case .confirmNeverStore:
             SettingsDialog(title: "Stop storing dictation history?",
                            subtitle: "This deletes your dictation history on this Mac and stops saving new dictations.",
@@ -560,19 +555,6 @@ extension HubRouter.SettingsTab {
 extension Notification.Name {
     /// The "Show Flow Bar at all times" setting changed.
     static let flowBarSettingChanged = Notification.Name("Onword.flowBarSettingChanged")
-}
-
-extension Transcriber.Model {
-    var shortTitle: String {
-        switch self {
-        case .baseEnglish: "Base (English)"
-        case .smallEnglish: "Small (English)"
-        case .largeTurbo: "Large v3 Turbo"
-        case .base: "Base"
-        case .small: "Small"
-        case .khmer: "Khmer"
-        }
-    }
 }
 
 /// While Google sign-in waits: copy the sign-in link (for a browser other than the default, where your
