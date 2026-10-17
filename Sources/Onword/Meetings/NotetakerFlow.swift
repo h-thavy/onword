@@ -279,6 +279,12 @@ final class NotetakerFlow {
                 if let pid = MeetingDetector.shared.current?.pid { NSRunningApplication(processIdentifier: pid)?.unhide() }
             }
         }
+        // ONWORD_TEST_CONFIRM_DELETE=1 asks "Delete meeting?" for the newest note (for snapshots).
+        if env["ONWORD_TEST_CONFIRM_DELETE"] != nil, let newest = MeetingStore.shared.meetings.first {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                FolderEditor.shared.confirmDeleteNote(newest, over: NSApp.windows.first { $0.isVisible && $0.title != "" && $0.frame.width > 600 })
+            }
+        }
         // ONWORD_TEST_RECORD=<seconds> records a meeting for that long, starting 3 s after launch.
         if let seconds = env["ONWORD_TEST_RECORD"].flatMap(Double.init) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

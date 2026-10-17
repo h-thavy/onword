@@ -1203,7 +1203,6 @@ struct ChatBubble: View {
 struct NoteMoreMenu: View {
     let meeting: Meeting
     var onDelete: () -> Void = {}
-    @State private var confirmDelete = false
 
     var body: some View {
         PopMenuButton(items: items) {
@@ -1211,15 +1210,6 @@ struct NoteMoreMenu: View {
                 .frame(width: 32, height: 32).contentShape(Rectangle())
         }
         .help("More actions")
-        .alert("Delete meeting?", isPresented: $confirmDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                onDelete()
-                MeetingStore.shared.delete(meeting.id)
-            }
-        } message: {
-            Text("This will permanently delete the note and transcript. This action cannot be undone")
-        }
     }
 
     private var items: [PopMenuItem] {
@@ -1241,7 +1231,9 @@ struct NoteMoreMenu: View {
                 NSWorkspace.shared.activateFileViewerSelecting(
                     [FileManager.default.fileExists(atPath: recording.path) ? recording : meeting.folder])
             })
-            items.append(.init(title: "Delete", icon: "trash", destructive: true) { confirmDelete = true })
+            items.append(.init(title: "Delete", icon: "trash", destructive: true) { [meeting, onDelete] in
+                FolderEditor.shared.confirmDeleteNote(meeting, over: NSApp.keyWindow, deleted: onDelete)
+            })
         }
         return items
     }

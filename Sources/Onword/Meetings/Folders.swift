@@ -376,6 +376,16 @@ final class FolderEditor {
         }
     }
 
+    /// "Delete meeting?" for a note. A window-level dialog, so it doesn't depend on the view that asked (the
+    /// note row's "…" button disappears as soon as the pointer moves onto its menu).
+    func confirmDeleteNote(_ meeting: Meeting, over window: NSWindow?, deleted: @escaping () -> Void = {}) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.present(over: window) { close in
+                DeleteNoteView(meeting: meeting, close: close, deleted: deleted)
+            }
+        }
+    }
+
     private func present<Content: View>(over window: NSWindow?, @ViewBuilder content: (@escaping () -> Void) -> Content) {
         dismiss()
         guard let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
@@ -495,6 +505,39 @@ private struct FolderEditorView: View {
         let unchanged = folder != nil && name == folder?.name && description == (folder?.description ?? "")
         if !unchanged { save(name, description) }
         close()
+    }
+}
+
+private struct DeleteNoteView: View {
+    let meeting: Meeting
+    let close: () -> Void
+    let deleted: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Delete meeting?").font(Theme.sans(18, .semibold))
+                Text("This will permanently delete the note and transcript. This action cannot be undone")
+                    .font(Theme.sans(15)).foregroundStyle(Theme.inkFaint)
+            }
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel", action: close).buttonStyle(.pillQuiet).controlSize(.small).keyboardShortcut(.cancelAction)
+                Button("Delete") {
+                    deleted()
+                    MeetingStore.shared.delete(meeting.id)
+                    close()
+                }
+                .buttonStyle(PillButtonStyle(tint: Color(hex: 0xEE6A6A))).controlSize(.small)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 460, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.page))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border))
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 10)
+        .foregroundStyle(Theme.ink)
     }
 }
 
