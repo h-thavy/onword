@@ -186,7 +186,7 @@ final class DictationController: ObservableObject {
             } catch {
                 guard !Task.isCancelled, pendingModel?.model == target else { return }
                 log.error("Download of \(target.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                pendingModel?.failure = Self.describeModelError(error, online: wasOnline != false)
+                pendingModel?.failure = Self.describeModelError(error, online: wasOnline != false, model: target, retriesAutomatically: false)
             }
         }
     }
@@ -406,7 +406,7 @@ final class DictationController: ObservableObject {
                 refreshPermissions()
             } catch {
                 guard model == self.model, modelLoadID == loadID else { return }
-                let message = Self.describeModelError(error, online: wasOnline != false)
+                let message = Self.describeModelError(error, online: wasOnline != false, model: model)
                 log.error("Model load failed (attempt \(self.modelAttempts + 1)): \(error.localizedDescription, privacy: .public)")
                 modelStatus = message
                 modelProgress = nil
@@ -463,7 +463,8 @@ final class DictationController: ObservableObject {
 
     /// What went wrong, in plain words. The download library often hides the network error behind a generic
     /// "Download failed", so being offline is judged from the error chain and from the Mac's network status.
-    static func describeModelError(_ error: Error, online: Bool) -> String {
+    static func describeModelError(_ error: Error, online: Bool, model: Transcriber.Model = .smallEnglish,
+                                   retriesAutomatically: Bool = true) -> String {
         if let error = error as? Transcriber.TranscriberError { return error.localizedDescription }
         var errors: [NSError] = []
         var next: NSError? = error as NSError
@@ -477,9 +478,11 @@ final class DictationController: ObservableObject {
         let offlineCodes: Set<Int> = [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost,
                                       NSURLErrorDataNotAllowed, NSURLErrorInternationalRoamingOff]
         if !online || errors.contains(where: { $0.domain == NSURLErrorDomain && offlineCodes.contains($0.code) }) {
-            return "You’re offline. Onword needs to download its speech model once (about 500 MB) — it’ll start as soon as you’re back online."
+            return "You’re offline. This model needs a one-time download (\(model.downloadSize)). "
+                + (retriesAutomatically ? "It’ll retry when you’re back online." : "Click Try again when you’re back online.")
         }
-        return "Couldn’t download the speech model. Check your internet connection — Onword keeps retrying on its own."
+        return "Couldn’t download or load the speech model. Check your internet connection and free disk space. "
+            + (retriesAutomatically ? "Onword keeps retrying on its own." : "Click Try again to retry.")
     }
 
     // MARK: - Hotkey actions
