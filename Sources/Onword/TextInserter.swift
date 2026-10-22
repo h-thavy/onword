@@ -26,10 +26,12 @@ enum TextInserter {
 
     private static let log = Logger(subsystem: "io.github.h-thavy.onword", category: "insert")
 
-    /// Apps where the AX write is known to be unreliable or meaningless; always paste.
+    /// Apps where the AX write is known to be unreliable or meaningless; always paste. Terminals especially:
+    /// cmux applies the write a moment later, so it looked like it failed and the paste typed it a second time.
     private static let pasteOnlyBundleIDs: Set<String> = [
-        "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "com.mitchellh.ghostty",
-        "net.kovidgoyal.kitty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92", "com.tinyspeck.slackmacgap",
+        "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp", "com.mitchellh.ghostty",
+        "net.kovidgoyal.kitty", "com.cmuxterm.app", "org.alacritty", "com.github.wez.wezterm", "co.zeit.hyper",
+        "org.tabby", "dev.zed.Zed", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92", "com.tinyspeck.slackmacgap",
     ]
 
     @discardableResult
@@ -57,8 +59,13 @@ enum TextInserter {
               let before = AX.string(element, kAXValueAttribute) else { return false }
 
         let result = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
-        guard result == .success, let after = AX.string(element, kAXValueAttribute) else { return false }
-        // Only trust it if the field visibly changed and now contains our text.
+        guard result == .success, var after = AX.string(element, kAXValueAttribute) else { return false }
+        // Only trust it if the field visibly changed and now contains our text. Some apps apply the write a
+        // moment later: look again before falling back to pasting, or the text would land twice.
+        if after == before {
+            Thread.sleep(forTimeInterval: 0.25)
+            after = AX.string(element, kAXValueAttribute) ?? after
+        }
         let landed = after != before && after.contains(text)
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
